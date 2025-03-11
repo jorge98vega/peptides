@@ -1,30 +1,34 @@
 #######################################################################
-set -e
+# Este script realiza una simulación de calentamiento (heating) en Amber.  
+# Toma un archivo de entrada proporcionado como argumento y genera una 
+# serie de simulaciones para calentar el sistema desde una temperatura 
+# inicial a una temperatura final en un número determinado de pasos.
+
+set -e  # Salir si ocurre algún error
 
 module load ips/2019
 
-INPUT=$1
-JOB=${INPUT}_heat
-TEMPI=100
-TEMPF=300
-STEPS=10
-TEMP0=$TEMPI
-DT=$(( (TEMPF - TEMPI) / STEPS ))
+INPUT=$1   # Archivo de entrada proporcionado como argumento
+JOB=${INPUT}_heat   # Nombre del trabajo basado en el archivo de entrada
+TEMPI=100   # Temperatura inicial en Kelvin
+TEMPF=300   # Temperatura final en Kelvin
+STEPS=10    # Número de pasos para el calentamiento
+TEMP0=$TEMPI   # Inicializar la temperatura final del primer paso
+DT=$(( (TEMPF - TEMPI) / STEPS ))   # Incremento de temperatura por paso
 
 #######################################################################
 # RUN SIMULATION
 
-
-LASTj=0
+LASTj=0   # Contador para almacenar el número del último paso
 for (( j=1; j<=$STEPS; j++ ))
 do
+    echo $j  # Imprimir el número de paso actual
 
-echo $j
+    TEMPI=$TEMP0   # Asignar la temperatura inicial al primer paso
+    TEMP0=$(( TEMPI + DT ))   # Calcular la temperatura para el siguiente paso
 
-TEMPI=$TEMP0
-TEMP0=$(( TEMPI + DT))
-
-cat << EOF > ${JOB}_${j}.in
+    # Crear el archivo de entrada para la simulación de calentamiento
+    cat << EOF > ${JOB}_${j}.in
 equil_md
  &cntrl
  nmropt = 1, ! (Leer fichero de restraints)
@@ -41,7 +45,8 @@ equil_md
  LISTOUT = ${JOB}_${j}_rst.lis
 EOF
 
-${AMBERHOME}/bin/sander -O -i ${JOB}_${j}.in \
+    # Ejecutar la simulación con el programa sander de Amber
+    ${AMBERHOME}/bin/sander -O -i ${JOB}_${j}.in \
                            -o ${JOB}_${j}.out \
                            -p ${INPUT}.top \
                            -c ${JOB}_${LASTj}.rst \
@@ -49,9 +54,11 @@ ${AMBERHOME}/bin/sander -O -i ${JOB}_${j}.in \
                            -x ${JOB}_${j}.coord \
                            -r ${JOB}_${j}.rst
 
-gzip -f ${JOB}_${LASTj}.rst ${JOB}_${j}.out ${JOB}_${j}.coord
-\rm ${JOB}_${j}.in
+    # Comprimir los archivos de salida
+    gzip -f ${JOB}_${LASTj}.rst ${JOB}_${j}.out ${JOB}_${j}.coord
 
-LASTj=$j
+    # Eliminar el archivo de entrada temporal
+    \rm ${JOB}_${j}.in
 
+    LASTj=$j   # Actualizar el último paso para el próximo ciclo
 done

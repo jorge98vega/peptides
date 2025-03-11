@@ -1,15 +1,19 @@
 #######################################################################
-set -e
+# Este script realiza una minimización de energía utilizando Amber.  
+# Recibe como argumento el archivo de entrada (input), genera un archivo 
+# de configuración para la simulación y ejecuta la minimización. 
+
+set -e  # Salir si ocurre algún error
 
 module load ips/2019
 
-INPUT=$1
-JOB=${INPUT}_min
+INPUT=$1   # Archivo de entrada proporcionado como argumento
+JOB=${INPUT}_min   # Nombre del trabajo basado en el archivo de entrada
 
 #######################################################################
 # RUN SIMULATION
 
-
+# Crear archivo de entrada para la simulación de minimización
 cat << EOF > ${JOB}.in
 min_md
  &cntrl
@@ -27,6 +31,7 @@ min_md
  LISTOUT = ${JOB}_rst.lis
 EOF
 
+# Ejecutar la simulación con el programa sander de Amber
 ${AMBERHOME}/bin/sander -O -i ${JOB}.in \
                            -o ${JOB}.out \
                            -p ${INPUT}.top \
@@ -35,4 +40,5 @@ ${AMBERHOME}/bin/sander -O -i ${JOB}.in \
                            -x ${JOB}.coord \
                            -r ${JOB}.rst
 
+# Eliminar el archivo de entrada temporal
 \rm ${JOB}.in

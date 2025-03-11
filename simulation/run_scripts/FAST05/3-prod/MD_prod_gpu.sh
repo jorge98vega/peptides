@@ -1,25 +1,31 @@
 #######################################################################
-# DEFINE LOCALS
-set -e
+# Este script realiza simulaciones de producción utilizando Amber con
+# soporte CUDA para acelerar la simulación mediante el uso de GPU. 
+# Se ejecutan múltiples pasos de simulación, cada uno usando un 
+# archivo de reinicio generado en el paso anterior.
+# El trabajo se divide en 500 pasos.
 
-# En $FAST05:
-export CUDA_VISIBLE_DEVICES=$2
-module load amber/18_cuda_gnu
+set -e  # Salir si ocurre algún error
 
-INPUT=$1
-JOB=${INPUT}_prod
+# Definición de variables locales
+export CUDA_VISIBLE_DEVICES=$2  # Establecer qué GPU utilizar (pasado como argumento)
+module load amber/18_cuda_gnu  # Cargar el módulo de Amber con soporte CUDA
+
+INPUT=$1   # Nombre del archivo de entrada
+JOB=${INPUT}_prod   # Nombre del trabajo basado en el archivo de entrada
 
 #######################################################################
 # RUN SIMULATION
 
+# Realiza 500 iteraciones de simulación
 for i in {0..499..1}
-#i=0
 do
-j=$(( i + 1 ))
+    j=$(( i + 1 ))   # Incrementar el número del paso de simulación
 
-echo $j
+    echo $j   # Imprimir el número de paso actual
 
-cat << EOF > ${JOB}_${j}.in
+    # Crear el archivo de entrada para cada paso de simulación
+    cat << EOF > ${JOB}_${j}.in
 estab_md_cuda
  &cntrl
  nmropt = 1, ! (Leer fichero de restraints)
@@ -39,7 +45,9 @@ estab_md_cuda
 END
 EOF
 
-pmemd.cuda_SPFP -O -i ${JOB}_${j}.in \
+
+    # Ejecutar la simulación utilizando la versión optimizada de CUDA de pmemd
+    pmemd.cuda_SPFP -O -i ${JOB}_${j}.in \
                    -o ${JOB}_${j}.out \
                    -p ${INPUT}.top \
                    -c ${JOB}_${i}.rst \
@@ -47,8 +55,9 @@ pmemd.cuda_SPFP -O -i ${JOB}_${j}.in \
                    -x ${JOB}_${j}.coord \
                    -r ${JOB}_${j}.rst
 
-gzip -f ${JOB}_${i}.rst ${JOB}_${j}.out ${JOB}_${j}.coord
-\rm ${JOB}_${j}.in
+    # Comprimir los archivos de salida para ahorrar espacio
+    gzip -f ${JOB}_${i}.rst ${JOB}_${j}.out ${JOB}_${j}.coord
 
+    # Eliminar el archivo de entrada temporal
+    \rm ${JOB}_${j}.in
 done
-
