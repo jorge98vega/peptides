@@ -24,6 +24,8 @@
 
 # export OMP_NUM_THREADS=$NSLOTS        # SGE
 # export OMP_NUM_THREADS=$SLURM_NPROCS  # Slurm
+module load ips/2019
+export MKL_HOME=$MKLROOT
 
 
 time ./MD_wham.sh $1 $2 $3 $4 $5
