@@ -8,6 +8,7 @@ from mdtools.core import *
 
 
 def get_indices(traj, WATs, IONs, CAs, N_rings, layer=0, boundary=None,
+                topselection=None, botselection=None,
                 delta=0.1, delta_r=None, delta_z=None, offset=None,
                 preselected=False, save=True, savefileWATs="iterWATs", savefileIONs="iterIONs", first=None, last=None):
     """
@@ -49,6 +50,9 @@ def get_indices(traj, WATs, IONs, CAs, N_rings, layer=0, boundary=None,
     # Obtener los átomos que delimitan la capa seleccionada
     atoms_top = get_indices_in_layer(CAs, layer)
     atoms_bot = get_indices_in_layer(CAs, N_rings-layer-1)
+    if topselection is not None: atoms_top = traj.top.select(topselection)
+    if botselection is not None: atoms_bot = traj.top.select(botselection)
+
     if layer != boundary:
         atoms_top_b = get_indices_in_layer(CAs, boundary)
         atoms_bot_b = get_indices_in_layer(CAs, N_rings-boundary-1)
@@ -200,7 +204,7 @@ def get_indices_xtal(traj, WATs, IONs, CAs, N_rings, delta_r=0.0, offsets=None, 
 
 
 def analyse(p, traj, prelabelWATs="iterWATs", prelabelIONs="iterIONs", label=None, reslist=[], layer=0, boundary=None,
-            distance_cutoff=2.5, angle_cutoff=120, first=None, last=None, xtal=False):
+            distance_cutoff=2.5, angle_cutoff=120, first=None, last=None, xtal=False, chunk_size=None):
     """
     Analiza la trayectoria de un sistema periódico para identificar puentes de hidrógeno y puentes salinos.
 
@@ -275,7 +279,8 @@ def analyse(p, traj, prelabelWATs="iterWATs", prelabelIONs="iterIONs", label=Non
         # Buscar puentes de hidrógeno
         interesting_atoms = np.concatenate((WATs, IONs, bondable, backbone, b))
         triplets, distances, angles, presence = md.baker_hubbard(
-            frame, periodic=xtal, interesting_atoms=interesting_atoms, return_geometry=True,
+            frame, periodic=xtal, interesting_atoms=interesting_atoms,
+            return_geometry=True, chunk_size=chunk_size,
             distance_cutoff=0.1 * distance_cutoff, angle_cutoff=angle_cutoff
         )
         

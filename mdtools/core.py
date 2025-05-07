@@ -73,7 +73,7 @@ def orient(p, p0, pA, pB, axes_order="ZX"):
     return orientado
 
 
-def recenter_traj_RMSD(run_name, N_tubes, N_res):
+def recenter_traj_RMSD(run_name, N_tubes, N_res, CAs_Z=None, CAs_X=None):
     '''
     Reorienta la trayectoria de una simulación MD (Molecular Dynamics) 
     para que las coordenadas se centren en un nuevo sistema de referencia basado 
@@ -98,7 +98,10 @@ def recenter_traj_RMSD(run_name, N_tubes, N_res):
     # Seleccionamos los carbonos alfa de la parte superior e inferior de los tubos
     CAs_top = np.concatenate((CAs_tube1[0:N_res], CAs_tube2[0:N_res], CAs_tube3[0:N_res], CAs_tube4[0:N_res]))
     CAs_bot = np.concatenate((CAs_tube1[-N_res:], CAs_tube2[-N_res:], CAs_tube3[-N_res:], CAs_tube4[-N_res:]))
-    
+
+    if CAs_Z is not None: CAs_top = traj.top.select(CAs_Z)
+    if CAs_X is not None: CAs_tube1 = traj.top.select(CAs_X)
+
     step = len(traj)-1  # (último frame)
     # Calculamos los centros de masa para los puntos p0, pZ y pX
     p0 = np.sum(traj.xyz[step][CAs], axis=0)/CAs.size  # centro de masa de todos los átomos de CA en la simulación

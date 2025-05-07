@@ -4,15 +4,19 @@
 INFILE=9tubes_10stack_oriented
 OUTFILE=9t10s_run01
 
-# Número de tubos y anillos por tubo
+# Número de "tubos" y péptidos por tubo
 TUBES=9
-RINGS=10
+PEPTIDES=10
 
-# Secuencia de residuos (cada 2 anillos)
+# Secuencia de residuos
 SEQ="LYS PHD LYN PHD LYS PHD LYN PHD
 LYN PHD LYS PHD LYN PHD LYS PHD"
+# Cada cuantos péptidos se repite la secuencia
+REP=2
+# ¿Son péptidos cíclicos?
+CYCLIC=true
 
-# Iones por cada 2 anillos (puede estar vacío)
+# Iones por cada REP péptidos (puede estar vacío)
 IONS="TFA TFA TFA TFA"
 
 # Creación del archivo de entrada para tleap
@@ -31,14 +35,14 @@ EOF
 
 # Generación de la secuencia de residuos para cada tubo
 for (( i=1; i<=TUBES; i++ )); do
-    for (( j=1; j<=$(( RINGS / 2 )); j++ )); do
+    for (( j=1; j<=$(( PEPTIDES / REP )); j++ )); do
         echo "$SEQ" >> leap.in
     done
 done
 
 # Adición de iones a cada tubo
 for (( i=0; i<TUBES; i++ )); do
-    for (( j=1; j<=$(( RINGS / 2 )); j++ )); do 
+    for (( j=1; j<=$(( PEPTIDES / REP )); j++ )); do 
         echo "$IONS" >> leap.in
     done
 done
@@ -47,11 +51,13 @@ done
 echo "}" >> leap.in
 
 # Creación de enlaces covalentes entre los anillos
-for (( i=0; i<TUBES; i++ )); do
-    for (( j=0; j<RINGS; j++ )); do
-        echo "bond x.$(( 1 + 8 * j + 8 * RINGS * i )).N x.$(( 8 + 8 * j + 8 * RINGS * i )).C" >> leap.in
+if $CYCLIC; then
+    for (( i=0; i<TUBES; i++ )); do
+        for (( j=0; j<PEPTIDES; j++ )); do
+            echo "bond x.$(( 1 + 8 * j + 8 * PEPTIDES * i )).N x.$(( 8 + 8 * j + 8 * PEPTIDES * i )).C" >> leap.in
+        done
     done
-done
+fi
 
 # Solvatación y adición de iones
 cat << EOF >> leap.in
