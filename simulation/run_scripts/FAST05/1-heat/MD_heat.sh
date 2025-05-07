@@ -24,7 +24,7 @@ for (( j=1; j<=$STEPS; j++ ))
 do
     echo $j  # Imprimir el número de paso actual
 
-    TEMPI=$TEMP0   # Asignar la temperatura inicial al primer paso
+    TEMPI=$TEMP0   # Asignar la temperatura del paso anterior
     TEMP0=$(( TEMPI + DT ))   # Calcular la temperatura para el siguiente paso
 
     # Crear el archivo de entrada para la simulación de calentamiento
