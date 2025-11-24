@@ -16,7 +16,7 @@ wd=$(pwd)  # Obtener el directorio de trabajo actual
 # Si el paso es 0 (preparación inicial):
 if [ $step -eq 0 ]; then
     # Copiar archivos de entrada a la ventana correspondiente
-    cp ${wd}/${INPUT}.top ${wd}/wham${window}/
+    cp ${wd}/${INPUT}.top ${wd}/MD_wham.sh ${wd}/run_wham.sh ${wd}/wham${window}/
     cp ${wd}/${INPUT}_wham_0.rst ${wd}/wham${window}/${INPUT}_wham${window}_0.rst
 
     # Cambiar al directorio de la ventana
@@ -24,17 +24,17 @@ if [ $step -eq 0 ]; then
     echo "Window $window - Step $step"
     
     # Enviar trabajo para preparar la ventana y obtener el JOB_ID de SLURM
-    JOB_ID=$(sbatch -J "prep${window}" run_wham.sh $INPUT $window 1 2000 $step | awk '{print $4}')
+    JOB_ID=$(sbatch -J "prep${window}" run_wham.sh $INPUT $window 1 8000 $step | awk '{print $4}')
     echo "Job $JOB_ID"
 
     # Enviar trabajo para la simulación WHAM, dependiente del trabajo anterior
-    sbatch -J "wham${window}" -d afterany:$((JOB_ID)) run_wham.sh $INPUT $window 2 5000
+    #sbatch -J "wham${window}" -d afterany:$((JOB_ID)) run_wham.sh $INPUT $window 2 5000
     
     cd $wd
     # Llamada recursiva para la ventana anterior (si corresponde)
-    new_window=$((window-1))
-    new_step=$((step-1))
-    ./run_all_wham.sh $INPUT $new_window $limit $new_step $((JOB_ID))
+    #new_window=$((window-1))
+    #new_step=$((step-1))
+    #./run_all_wham.sh $INPUT $new_window $limit $new_step $((JOB_ID))
 
     # Llamada recursiva para la ventana siguiente (si corresponde)
     new_window=$((window+1))
@@ -51,11 +51,11 @@ else
     echo "Window $window - Step $step"
     
     # Enviar trabajo para preparar la ventana, dependiente del trabajo anterior
-    JOB_ID=$(sbatch -J "prep${window}" -d afterok:${OLD_JOB_ID} run_wham.sh $INPUT $window 1 2000 $step | awk '{print $4}')
+    JOB_ID=$(sbatch -J "prep${window}" -d afterok:${OLD_JOB_ID} run_wham.sh $INPUT $window 1 8000 $step | awk '{print $4}')
     echo "Job $JOB_ID"
 
     # Enviar trabajo para la simulación WHAM, dependiente del trabajo anterior
-    sbatch -J "wham${window}" -d afterany:$((JOB_ID)) run_wham.sh $INPUT $window 2 5000
+    #sbatch -J "wham${window}" -d afterany:$((JOB_ID)) run_wham.sh $INPUT $window 2 5000
     
     cd $wd
     # Llamada recursiva para la ventana anterior si el paso es negativo y la ventana es mayor que 0

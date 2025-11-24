@@ -4,10 +4,11 @@
 set -e
 
 INPUT=$1  # Nombre del archivo de entrada (por ejemplo, archivo .top de Amber)
-WINDOW=$2  # Número de la ventana actual en la simulación WHAM
-ITER=$3  # Número de iteración actual
-NSTEPS=$4  # Número de pasos de simulación
-JOB=${INPUT}_wham${2}_${ITER}  # Nombre del trabajo basado en la entrada y la ventana/iteración
+FIXEDWINDOW=$2  # Número de la ventana de la coordenada fija
+WINDOW=$3  # Número de la ventana actual en la simulación WHAM
+ITER=$4  # Número de iteración actual
+NSTEPS=$5  # Número de pasos de simulación
+JOB=${INPUT}_wham_${FIXEDWINDOW}_${WINDOW}_${ITER}  # Nombre del trabajo basado en la entrada y la ventana/iteración
 PREV=$((ITER-1))  # Iteración anterior
 
 #######################################################################
@@ -29,9 +30,9 @@ QM/MM
  &end
  &wt type = 'DUMPFREQ', istep1 = 1, /
  &wt type = 'END' &end
- DISANG = wham${WINDOW}_rst.dat
- LISTOUT = wham${WINDOW}_rst_${ITER}.lis
- DUMPAVE = wham${WINDOW}_rst_${ITER}.dump
+ DISANG = wham_${FIXEDWINDOW}_${WINDOW}_rst.dat
+ LISTOUT = wham_${FIXEDWINDOW}_${WINDOW}_rst_${ITER}.lis
+ DUMPAVE = wham_${FIXEDWINDOW}_${WINDOW}_rst_${ITER}.dump
 /
  &qmmm
  qmmask='@547,548,549,550,551,552,553,465,466,467,468,469,470,1314'
@@ -52,25 +53,25 @@ EOF
 $AMBERHOME/bin/sander -O -i amberwham.in \
     -o ${JOB}.out \
     -p ${INPUT}.top \
-    -c ${INPUT}_wham${WINDOW}_${PREV}.rst \
+    -c ${INPUT}_wham_${FIXEDWINDOW}_${WINDOW}_${PREV}.rst \
     -x ${JOB}.nc \
     -r ${JOB}.rst > ${JOB}.out
 
 # Si es la primera iteración, copiar los archivos de resultados a las siguientes ventanas
 if [[ $ITER -eq 1 ]]; then
-    if [[ $5 -eq 0 ]]; then
+    if [[ $6 -eq 0 ]]; then
         # Si la condición es 0, se copian los archivos a la ventana anterior y siguiente
-        #NEXT_WINDOW=$((WINDOW-1))
-        #cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
+        NEXT_WINDOW=$((WINDOW-1))
+        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
         NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
-    elif [[ $5 -lt 0 ]]; then
+        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
+    elif [[ $6 -lt 0 ]]; then
         # Si el paso es negativo, solo copiar a la ventana anterior
         NEXT_WINDOW=$((WINDOW-1))
-        cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
-    elif [[ $5 -gt 0 ]]; then
+        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
+    elif [[ $6 -gt 0 ]]; then
         # Si el paso es positivo, solo copiar a la ventana siguiente
         NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
+        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
     fi
 fi
