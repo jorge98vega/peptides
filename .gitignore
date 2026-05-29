@@ -1,3 +1,10 @@
 \#*#
 __pycache__/
 .ipynb_checkpoints/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+*.so
+.DS_Store
