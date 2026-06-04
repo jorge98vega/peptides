@@ -1,0 +1,13 @@
+{
+    "pdbfile": "input.pdb",
+    "newfile": "output.pdb",
+    "Nrings": 32,
+    "Nres": 8,
+    "Natoms": 166,
+    "clones": [
+        {"translation": [0.0,  0.0,  0.0], "angle":  0.0},
+        {"translation": [22.0, 0.0,  0.0], "angle": 10.0},
+        {"translation": [22.0, 22.0, 0.0], "angle": 10.0},
+        {"translation": [0.0,  22.0, 0.0], "angle": 10.0}
+    ]
+}

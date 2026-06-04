@@ -1,3 +1,4 @@
+#!/bin/bash
 # Script para extraer distancias y calcular estadísticas (media y desviación estándar) de múltiples archivos
 
 MOL=4tubes_run01      # Nombre del modelo o molécula

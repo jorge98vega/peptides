@@ -7,6 +7,68 @@ from mdtools.core import *
 ### ANALYSIS ###
 
 
+def get_particle_indices(traj, particles, atoms_top, atoms_bot,
+                         delta=0.0, delta_r=None, delta_z=None,
+                         z_check=True, center_offset=None,
+                         periodic=False, lattice_offsets=None,
+                         preselected=False, first=None, last=None):
+    """
+    Core: return per-frame arrays of particle indices inside a cylindrical region.
+
+    atoms_top / atoms_bot : plain numpy index arrays defining the region boundaries.
+    delta                 : uniform expansion of radius and half-height (nm).
+    delta_r / delta_z     : per-axis expansion, override delta.
+    z_check               : if False, only radial check (use for xtal/periodic case).
+    center_offset         : (3,) shift applied to the region centre (nm).
+    periodic              : apply periodic boundary wrapping.
+    lattice_offsets       : list of (3,) offset vectors in lattice-vector units.
+    preselected           : if True, particles must be a list-of-arrays (one per frame).
+    """
+    if delta_r is None: delta_r = delta
+    if delta_z is None: delta_z = delta
+    if center_offset is None: center_offset = np.zeros(3)
+    if periodic and lattice_offsets is None: lattice_offsets = [np.zeros(3)]
+    if first is None: first = 0
+    if last  is None: last  = len(traj)
+
+    result = []
+    aux = particles if preselected else None
+
+    for step in range(first, last):
+        frame = traj.slice(step, copy=False).xyz[0]
+        pts   = aux[step - first] if preselected else particles
+
+        centertop = frame[atoms_top].mean(axis=0)
+        centerbot = frame[atoms_bot].mean(axis=0)
+        center    = (centertop + centerbot) / 2 + center_offset
+
+        r = max(distance_matrix(frame[atoms_top], frame[atoms_top]).max(),
+                distance_matrix(frame[atoms_bot], frame[atoms_bot]).max()) / 2 + delta_r
+
+        if z_check and not periodic:
+            zmax = frame[atoms_top][:, 2].mean() - center[2] + delta_z
+            zmin = frame[atoms_bot][:, 2].mean() - center[2] - delta_z
+
+        if periodic:
+            lvs = traj.slice(step, copy=False).unitcell_lengths[0]
+
+        inside = []
+        for atom in pts:
+            if periodic:
+                for off in lattice_offsets:
+                    xyz = wrap_coordinates(frame[atom], lvs) - (center + off * lvs)
+                    if xyz[0]**2 + xyz[1]**2 < r**2:
+                        inside.append(atom)
+                        break
+            else:
+                xyz = frame[atom] - center
+                if (xyz[0]**2 + xyz[1]**2 < r**2) and (not z_check or zmin < xyz[2] < zmax):
+                    inside.append(atom)
+        result.append(np.array(inside))
+
+    return np.array(result, dtype=object)
+
+
 def get_indices(traj, WATs, IONs, CAs, N_rings, layer=0, boundary=None,
                 topselection=None, botselection=None,
                 delta=0.1, delta_r=None, delta_z=None, offset=None,
@@ -34,90 +96,25 @@ def get_indices(traj, WATs, IONs, CAs, N_rings, layer=0, boundary=None,
     - first: Primer frame a analizar.
     - last: Último frame a analizar.
     """
-    # Inicializar parámetros opcionales
     if boundary is None: boundary = layer
-    if delta_r is None: delta_r = delta
-    if delta_z is None: delta_z = delta
-    if offset is None: offset = np.array([0.0, 0.0, 0.0])
-    if first is None: first = 0
-    if last is None: last = len(traj)
-    
-    # Inicializar listas para almacenar los índices de WATs e IONs
-    iterWATs, iterIONs = [], []
-    if layer != boundary:
-        iterWATs_b, iterIONs_b = [], []
-    
-    # Obtener los átomos que delimitan la capa seleccionada
+
     atoms_top = get_indices_in_layer(CAs, layer)
-    atoms_bot = get_indices_in_layer(CAs, N_rings-layer-1)
+    atoms_bot = get_indices_in_layer(CAs, N_rings - layer - 1)
     if topselection is not None: atoms_top = traj.top.select(topselection)
     if botselection is not None: atoms_bot = traj.top.select(botselection)
 
+    kw = dict(delta=delta, delta_r=delta_r, delta_z=delta_z,
+              center_offset=offset, preselected=preselected, first=first, last=last)
+
+    iterWATs = get_particle_indices(traj, WATs, atoms_top, atoms_bot, **kw)
+    iterIONs = get_particle_indices(traj, IONs, atoms_top, atoms_bot, **kw)
+
     if layer != boundary:
         atoms_top_b = get_indices_in_layer(CAs, boundary)
-        atoms_bot_b = get_indices_in_layer(CAs, N_rings-boundary-1)
-    
-    # Si los WATs e IONs ya están preseleccionados, usar sus listas
-    if preselected:
-        auxWATs, auxIONs = WATs, IONs
-    
-    # Iterar sobre los frames de la trayectoria
-    for step in range(first, last):
-        frame = traj.slice(step, copy=False).xyz[0]  # Obtener la posición de los átomos en el frame actual
-        
-        if preselected:
-            WATs, IONs = auxWATs[step], auxIONs[step]
-        
-        # Calcular el centro y el radio de la región de selección
-        centertop = np.mean(frame[atoms_top], axis=0)
-        centerbot = np.mean(frame[atoms_bot], axis=0)
-        center = (centertop + centerbot) / 2
-        
-        rtop = np.max(distance_matrix(frame[atoms_top], frame[atoms_top]))
-        rbot = np.max(distance_matrix(frame[atoms_bot], frame[atoms_bot]))
-        r = max(rtop, rbot) / 2 + delta_r  # Radio ajustado
-        
-        # Calcular las alturas de la región de selección
-        zmax = np.mean(frame[atoms_top][:, 2]) - center[2] + delta_z
-        zmin = np.mean(frame[atoms_bot][:, 2]) - center[2] - delta_z
-        if layer != boundary:
-            zmax_b = np.mean(frame[atoms_top_b][:, 2]) - center[2] + delta_z
-            zmin_b = np.mean(frame[atoms_bot_b][:, 2]) - center[2] - delta_z
-        
-        # Seleccionar aguas en la región
-        aux, aux_b = [], []
-        for atom in WATs:
-            xyz = frame[atom] - (center + offset)
-            if zmin < xyz[2] < zmax and (xyz[0]**2 + xyz[1]**2 < r**2):
-                aux.append(atom)
-            elif layer != boundary and zmin_b < xyz[2] < zmax_b and (xyz[0]**2 + xyz[1]**2 < r**2):
-                aux_b.append(atom)
-        
-        iterWATs.append(np.array(aux))
-        if layer != boundary:
-            iterWATs_b.append(np.array(aux_b))
-        
-        # Seleccionar iones en la región
-        aux, aux_b = [], []
-        for atom in IONs:
-            xyz = frame[atom] - (center + offset)
-            if zmin < xyz[2] < zmax and (xyz[0]**2 + xyz[1]**2 < r**2):
-                aux.append(atom)
-            elif layer != boundary and zmin_b < xyz[2] < zmax_b and (xyz[0]**2 + xyz[1]**2 < r**2):
-                aux_b.append(atom)
-        
-        iterIONs.append(np.array(aux))
-        if layer != boundary:
-            iterIONs_b.append(np.array(aux_b))
-    
-    # Convertir listas a arrays de objetos
-    iterWATs = np.array(iterWATs, dtype=object)
-    iterIONs = np.array(iterIONs, dtype=object)
-    if layer != boundary:
-        iterWATs_b = np.array(iterWATs_b, dtype=object)
-        iterIONs_b = np.array(iterIONs_b, dtype=object)
-    
-    # Guardar los resultados si es necesario
+        atoms_bot_b = get_indices_in_layer(CAs, N_rings - boundary - 1)
+        iterWATs_b  = get_particle_indices(traj, WATs, atoms_top_b, atoms_bot_b, **kw)
+        iterIONs_b  = get_particle_indices(traj, IONs, atoms_top_b, atoms_bot_b, **kw)
+
     if save:
         np.save(f"{savefileWATs}.npy", iterWATs)
         np.save(f"{savefileIONs}.npy", iterIONs)
@@ -146,58 +143,15 @@ def get_indices_xtal(traj, WATs, IONs, CAs, N_rings, delta_r=0.0, offsets=None, 
     - first: Primer frame a analizar.
     - last: Último frame a analizar.
     """
-    # Inicializar parámetros opcionales
-    if offsets is None: offsets = [np.array([0.0, 0.0, 0.0])]
-    if first is None: first = 0
-    if last is None: last = len(traj)
-    
-    # Inicializar listas para almacenar los índices de WATs e IONs
-    iterWATs, iterIONs = [], []
-    
-    # Definir los átomos que delimitan la capa seleccionada
-    layer = 0
-    atoms_top = get_indices_in_layer(CAs, layer)
-    atoms_bot = get_indices_in_layer(CAs, N_rings-layer-1)
-    
-    # Iterar sobre los frames de la trayectoria
-    for step in range(first, last):
-        frame = traj.slice(step, copy=False).xyz[0]  # Obtener posiciones de los átomos en el frame actual
-        lvs = traj.slice(0, copy=False).unitcell_lengths[0]  # Vectores de celda de la simulación periódica
-        
-        # Calcular el centro y el radio de la región de selección
-        centertop = np.mean(frame[atoms_top], axis=0)
-        centerbot = np.mean(frame[atoms_bot], axis=0)
-        center = (centertop + centerbot) / 2
-        
-        rtop = np.max(distance_matrix(frame[atoms_top], frame[atoms_top]))
-        rbot = np.max(distance_matrix(frame[atoms_bot], frame[atoms_bot]))
-        r = max(rtop, rbot) / 2 + delta_r  # Radio ajustado
-        
-        # Seleccionar aguas en la región
-        aux = []
-        for atom in WATs:
-            for offset in offsets:
-                xyz = wrap_coordinates(frame[atom], lvs) - (center + offset * lvs)
-                if xyz[0]**2 + xyz[1]**2 < r**2:
-                    aux.append(atom)
-                    break  # Si el átomo ya está en la región, no es necesario seguir iterando
-        iterWATs.append(np.array(aux))
-        
-        # Seleccionar iones en la región
-        aux = []
-        for atom in IONs:
-            for offset in offsets:
-                xyz = wrap_coordinates(frame[atom], lvs) - (center + offset * lvs)
-                if xyz[0]**2 + xyz[1]**2 < r**2:
-                    aux.append(atom)
-                    break
-        iterIONs.append(np.array(aux))
-    
-    # Convertir listas a arrays de objetos
-    iterWATs = np.array(iterWATs, dtype=object)
-    iterIONs = np.array(iterIONs, dtype=object)
-    
-    # Guardar los resultados si es necesario
+    atoms_top = get_indices_in_layer(CAs, 0)
+    atoms_bot = get_indices_in_layer(CAs, N_rings - 1)
+
+    kw = dict(delta_r=delta_r, z_check=False,
+              periodic=True, lattice_offsets=offsets, first=first, last=last)
+
+    iterWATs = get_particle_indices(traj, WATs, atoms_top, atoms_bot, **kw)
+    iterIONs = get_particle_indices(traj, IONs, atoms_top, atoms_bot, **kw)
+
     if save:
         np.save(f"{savefileWATs}.npy", iterWATs)
         np.save(f"{savefileIONs}.npy", iterIONs)
@@ -627,3 +581,5 @@ def water_channel_stability(traj, regex="iterWATs_channel*.npy", width=100, mode
     # Guardar los resultados en un archivo CSV
     stab_df = pd.DataFrame(stab_dicts)
     stab_df.to_csv(savefile)
+
+

@@ -1,0 +1,7 @@
+{
+    "pdbfile": "input.pdb",
+    "newfile": "output_clean.pdb",
+    "Nrings": 8,
+    "Nres": 8,
+    "Natoms": 166
+}

@@ -1,0 +1,7 @@
+[
+    {"type": "diff",     "iat": [552, 550, 552, 797], "rk": 0.0, "comment": "d(27HZ2-27NZ) - d(27HZ2-39NZ)"},
+    {"type": "distance", "iat": [552, 550],            "rk": 0.0, "comment": "d(27HZ2-27NZ)"},
+    {"type": "distance", "iat": [552, 797],            "rk": 0.0, "comment": "d(27HZ2-39NZ)"},
+    {"type": "distance", "iat": [550, 797],            "rk": 0.0, "comment": "d(27NZ-39NZ)"},
+    {"type": "angle",    "iat": [550, 552, 797],       "rk": 0.0, "comment": "a(27NZ-27HZ2-39NZ)"}
+]

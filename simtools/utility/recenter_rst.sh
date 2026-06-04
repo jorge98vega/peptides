@@ -1,3 +1,4 @@
+#!/bin/bash
 # Script para centrar y ajustar la imagen de un solo frame (RST) usando CPPTRAJ
 
 MOL=4t10s_run01  # Nombre del modelo o molécula

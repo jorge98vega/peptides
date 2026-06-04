@@ -1,0 +1,10 @@
+[
+    {
+        "type": "diff", "iat": [552, 550, 552, 797], "rk": 5.0,
+        "comment": "scanned cv"
+    },
+    {
+        "type": "distance", "iat": [552, 550], "rk": 0.0,
+        "comment": "monitoring"
+    }
+]

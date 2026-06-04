@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Este script procesa un archivo PDB para:
     Mantener la estructura y numeración de residuos correcta.

@@ -1,0 +1,11 @@
+[
+    {
+        "type": "distance", "iat": [550, 1315], "rk": 400,
+        "r1": 0.0, "r2": 0.0, "r3": 3.5, "r4": 5.0,
+        "comment": "upper bound with override"
+    },
+    {
+        "type": "distance", "iat": [797, 1315], "rk": 0,
+        "comment": "monitoring only"
+    }
+]

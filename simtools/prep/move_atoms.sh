@@ -1,3 +1,4 @@
+#!/bin/bash
 # Script para actualizar las coordenadas de átomos en un archivo .rst o .pdb
 # utilizando las nuevas coordenadas de un archivo .xyz. 
 

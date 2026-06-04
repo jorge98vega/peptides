@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Este script:
     Lee un archivo PDB (pdbfile).
