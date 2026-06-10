@@ -104,10 +104,10 @@ def main():
             center2 = (args.axis2_start + (j - 1) * args.axis2_step) if mode_2d else None
 
             if mode_2d:
-                dirname = f"wham_{i}_{j}"
+                dirname = os.path.join("windows", f"wham_{i}_{j}")
                 outfile = os.path.join(dirname, f"wham_{i}_{j}_rst.dat")
             else:
-                dirname = f"wham_{i}"
+                dirname = os.path.join("windows", f"wham_{i}")
                 outfile = os.path.join(dirname, f"wham_{i}_rst.dat")
 
             os.makedirs(dirname, exist_ok=True)
@@ -139,12 +139,12 @@ def main():
     total = nwin1 * nwin2
     print(f"Generated {total} restraint file(s) ({'2D' if mode_2d else '1D'} mode)")
     if mode_2d:
-        print(f"  Grid: {nwin1} x {nwin2} = {total} windows  (wham_i_j/)")
+        print(f"  Grid: {nwin1} x {nwin2} = {total} windows  (windows/wham_i_j/)")
     else:
         last_center = args.start + (nwin1 - 1) * args.step
-        print(f"  wham_1/wham_1_rst.dat  center={args.start:.3f}")
+        print(f"  windows/wham_1/wham_1_rst.dat  center={args.start:.3f}")
         if nwin1 > 1:
-            print(f"  wham_{nwin1}/wham_{nwin1}_rst.dat  center={last_center:.3f}")
+            print(f"  windows/wham_{nwin1}/wham_{nwin1}_rst.dat  center={last_center:.3f}")
 
 
 if __name__ == "__main__":

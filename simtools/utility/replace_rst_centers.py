@@ -64,8 +64,8 @@ def main():
                         help="Window directory/file prefix (default: wham_)")
     parser.add_argument("--rst-suffix",   default="_rst.dat", dest="rst_suffix",
                         help="Rst filename suffix inside each window dir (default: _rst.dat)")
-    parser.add_argument("--dir",          default=".",
-                        help="Root directory containing wham_N/ folders (default: .)")
+    parser.add_argument("--dir",          default="windows",
+                        help="Root directory containing wham_N/ folders (default: windows)")
     # window-map options
     parser.add_argument("--axis2-start",  type=float, default=None, dest="axis2_start",
                         help="Axis2 range start (enables window-map output)")
