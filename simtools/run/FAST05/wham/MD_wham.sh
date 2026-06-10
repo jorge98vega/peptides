@@ -58,19 +58,16 @@ $AMBERHOME/bin/sander -O -i amberwham.in \
 
 # Si es la primera iteración, copiar los archivos de resultados a las siguientes ventanas
 if [[ $ITER -eq 1 ]]; then
+    # SLURM_SUBMIT_DIR is the original wham${WINDOW}/ directory (before startjob moved to scratch)
+    ORIG_DIR=${SLURM_SUBMIT_DIR:-$(pwd)}
     if [[ $5 -eq 0 ]]; then
-        # Si la condición es 0, se copian los archivos a la ventana anterior y siguiente
-        #NEXT_WINDOW=$((WINDOW-1))
-        #cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
         NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
+        cp ${JOB}.rst ${ORIG_DIR}/../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
     elif [[ $5 -lt 0 ]]; then
-        # Si el paso es negativo, solo copiar a la ventana anterior
         NEXT_WINDOW=$((WINDOW-1))
-        cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
+        cp ${JOB}.rst ${ORIG_DIR}/../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
     elif [[ $5 -gt 0 ]]; then
-        # Si el paso es positivo, solo copiar a la ventana siguiente
         NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
+        cp ${JOB}.rst ${ORIG_DIR}/../wham${NEXT_WINDOW}/${INPUT}_wham${NEXT_WINDOW}_0.rst
     fi
 fi

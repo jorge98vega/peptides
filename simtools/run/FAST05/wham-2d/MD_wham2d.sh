@@ -59,19 +59,21 @@ $AMBERHOME/bin/sander -O -i amberwham.in \
 
 # Si es la primera iteración, copiar los archivos de resultados a las siguientes ventanas
 if [[ $ITER -eq 1 ]]; then
+    # SLURM_SUBMIT_DIR is the original wham_${FIXEDWINDOW}_${WINDOW}/ directory (before startjob moved to scratch)
+    ORIG_DIR=${SLURM_SUBMIT_DIR:-$(pwd)}
     if [[ $6 -eq 0 ]]; then
         # Si la condición es 0, se copian los archivos a la ventana anterior y siguiente
         NEXT_WINDOW=$((WINDOW-1))
-        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
+        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
         NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
+        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
     elif [[ $6 -lt 0 ]]; then
         # Si el paso es negativo, solo copiar a la ventana anterior
         NEXT_WINDOW=$((WINDOW-1))
-        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
+        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
     elif [[ $6 -gt 0 ]]; then
         # Si el paso es positivo, solo copiar a la ventana siguiente
         NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
+        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
     fi
 fi

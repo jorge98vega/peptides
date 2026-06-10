@@ -12,20 +12,26 @@ class Restraint:
         "avgdiff":  [0.5, -0.5, 0.5, -0.5]
     }
 
-    def __init__(self, rtype, iat, rk=0.0, rstwt=None, fixed=False):
-        self.rtype = rtype
-        self.iat   = iat
-        self.rk    = rk
-        self.rstwt = rstwt if rstwt is not None else self.DEFAULT_RSTWT.get(rtype)
-        self.fixed = fixed  # 2D: use axis1 center instead of axis2
+    def __init__(self, rtype, iat, rk=0.0, rstwt=None, umbrella=0):
+        self.rtype    = rtype
+        self.iat      = iat
+        self.rk       = rk
+        self.rstwt    = rstwt if rstwt is not None else self.DEFAULT_RSTWT.get(rtype)
+        self.umbrella = umbrella  # 0=fixed/ramp, 1=follow axis1, 2=follow axis2
 
-    def format_line(self, n, r1, r2, r3, r4, comment=""):
+    def format_line(self, n, r1, r2, r3, r4, comment="",
+                    r1a=None, r2a=None, r3a=None, r4a=None,
+                    nstep1=None, nstep2=None):
         iat_str = ",".join(str(i) for i in self.iat)
         line  = f"! {n}" + (f" - {comment}" if comment else "") + "\n"
         line += f"&rst iat={iat_str},\n"
         if self.rstwt:
             line += f"     rstwt={','.join(str(x) for x in self.rstwt)},\n"
         line += f"     r1={r1:.3f}, r2={r2:.3f}, r3={r3:.3f}, r4={r4:.3f},\n"
+        if r2a is not None:
+            line += f"     r1a={r1a:.3f}, r2a={r2a:.3f}, r3a={r3a:.3f}, r4a={r4a:.3f},\n"
+            line += f"     nstep1={nstep1}, nstep2={nstep2},\n"
+            line += f"     ifvari=1,\n"
         line += f"     rk2={self.rk}, rk3={self.rk}\n"
         line += "&end\n\n"
         return line
@@ -39,14 +45,14 @@ def load_restraints(config_path):
     r_overrides = []
     for e in entries:
         restraints.append(Restraint(
-            rtype = e["type"],
-            iat   = e["iat"],
-            rk    = e.get("rk", 0.0),
-            rstwt = e.get("rstwt", None),
-            fixed = e.get("fixed", False)
+            rtype    = e["type"],
+            iat      = e["iat"],
+            rk       = e.get("rk", 0.0),
+            rstwt    = e.get("rstwt", None),
+            umbrella = e.get("umbrella", 0)
         ))
         comments.append(e.get("comment", ""))
-        r_overrides.append({k: e[k] for k in ("r1", "r2", "r3", "r4") if k in e})
+        r_overrides.append({k: e[k] for k in ("r1", "r2", "r3", "r4", "r1a", "r2a", "r3a", "r4a", "nstep1", "nstep2") if k in e})
     return restraints, comments, r_overrides
 
 
@@ -65,10 +71,11 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Generate AMBER restraint files for 1D or 2D umbrella sampling. "
-            "1D mode (default): scans axis1, outputs whamN/whamN_rst.dat. "
+            "Default (start=stop=0): single window wham_1/wham_1_rst.dat. "
+            "1D mode: --start/--stop/--step, outputs wham_N/wham_N_rst.dat. "
             "2D mode: add --axis2-* args, outputs wham_i_j/wham_i_j_rst.dat. "
-            "JSON 'fixed': true → restraint tracks axis1 center in 2D mode. "
-            "Per-entry r1/r2/r3/r4 in JSON override the window center for that restraint."
+            "JSON 'umbrella': 0=fixed/ramp (default), 1=follow axis1, 2=follow axis2. "
+            "Ramp: set r2/r2a/r3a/nstep1/nstep2 in the JSON entry (umbrella=0 only)."
         )
     )
     parser.add_argument("--config",      required=True,        help="JSON file defining the restraints")
@@ -107,12 +114,27 @@ def main():
 
             with open(outfile, "w") as f:
                 for n, (r, c, rov) in enumerate(zip(restraints, comments, r_overrides), 1):
-                    center = center1 if (not mode_2d or r.fixed) else center2
                     _r1 = rov.get("r1", -500.0)
-                    _r2 = rov.get("r2",  center)
-                    _r3 = rov.get("r3",  center)
                     _r4 = rov.get("r4",  500.0)
-                    f.write(r.format_line(n, _r1, _r2, _r3, _r4, comment=c))
+                    if r.umbrella == 1:
+                        _r2 = _r3 = center1
+                    elif r.umbrella == 2:
+                        _r2 = _r3 = center2 if mode_2d else center1
+                    else:  # umbrella == 0: fixed or ramp
+                        _r2 = rov.get("r2", 0.0)
+                        _r3 = rov.get("r3", _r2)
+                    if "r2a" in rov or "r3a" in rov:
+                        _r2a = rov.get("r2a", _r2)
+                        _r3a = rov.get("r3a", _r3)
+                        f.write(r.format_line(n, _r1, _r2, _r3, _r4, comment=c,
+                                              r1a=rov.get("r1a", _r1),
+                                              r2a=_r2a,
+                                              r3a=_r3a,
+                                              r4a=rov.get("r4a", _r4),
+                                              nstep1=rov.get("nstep1", 0),
+                                              nstep2=rov.get("nstep2", 0)))
+                    else:
+                        f.write(r.format_line(n, _r1, _r2, _r3, _r4, comment=c))
 
     total = nwin1 * nwin2
     print(f"Generated {total} restraint file(s) ({'2D' if mode_2d else '1D'} mode)")
