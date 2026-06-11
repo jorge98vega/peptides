@@ -91,12 +91,12 @@ def query_jobs(user, prefix):
     return grid_2d, list_1d
 
 
-def display(grid_2d, list_1d, no_color):
+def display(grid_2d, list_1d, no_color, rows_range=None, cols_range=None, windows_range=None):
     lines = []
 
-    if grid_2d:
-        rows = sorted(set(i for i, j in grid_2d))
-        cols = sorted(set(j for i, j in grid_2d))
+    if grid_2d or rows_range:
+        rows = rows_range if rows_range else sorted(set(i for i, j in grid_2d))
+        cols = cols_range if cols_range else sorted(set(j for i, j in grid_2d))
         rl = max(len(str(r)) for r in rows)
         pad = " " * (rl + 1)
 
@@ -104,18 +104,18 @@ def display(grid_2d, list_1d, no_color):
         lines.append(t)
         lines.append(o)
 
+        counts: dict[str, int] = defaultdict(int)
         for i in rows:
             row = f"{i:>{rl}} "
             for j in cols:
-                s = grid_2d.get((i, j), "none")
+                s = grid_2d.get((i, j), "done" if rows_range else "none")
+                counts[s] += 1
                 row += nc(STATUS_SYM[s], s, no_color)
             lines.append(row)
 
-        counts: dict[str, int] = defaultdict(int)
-        for s in grid_2d.values():
-            counts[s] += 1
         queued = sum(counts[s] for s in ("running", "dependency", "pending"))
-        summary = f"\n{len(rows)}×{len(cols)} grid  |  in squeue: {queued}  "
+        done = counts["done"]
+        summary = f"\n{len(rows)}×{len(cols)} grid  |  done: {done}  in squeue: {queued}  "
         summary += "  ".join(
             f"{nc(STATUS_SYM[s], s, no_color)} {counts[s]}"
             for s in ("running", "dependency", "pending", "failed")
@@ -123,8 +123,8 @@ def display(grid_2d, list_1d, no_color):
         )
         lines.append(summary)
 
-    if list_1d:
-        ks = sorted(list_1d)
+    if list_1d or windows_range:
+        ks = windows_range if windows_range else sorted(list_1d)
         rl = max(len(str(k)) for k in ks)
         pad = " " * (rl + 1)
         t, o = ruler(ks, pad)
@@ -132,15 +132,16 @@ def display(grid_2d, list_1d, no_color):
         lines.append(t)
         lines.append(o)
         row = pad
+        counts: dict[str, int] = defaultdict(int)
         for k in ks:
-            s = list_1d[k]
+            s = list_1d.get(k, "done" if windows_range else "none")
+            counts[s] += 1
             row += nc(STATUS_SYM[s], s, no_color)
         lines.append(row)
 
-        counts: dict[str, int] = defaultdict(int)
-        for s in list_1d.values():
-            counts[s] += 1
-        lines.append("  ".join(
+        done = counts["done"]
+        queued = sum(counts[s] for s in ("running", "dependency", "pending"))
+        lines.append(f"done: {done}  in squeue: {queued}  " + "  ".join(
             f"{nc(STATUS_SYM[s], s, no_color)} {counts[s]}"
             for s in ("running", "dependency", "pending", "failed")
             if counts[s]
@@ -149,7 +150,7 @@ def display(grid_2d, list_1d, no_color):
     lines.append("")
     legend = [("running", "R  running"), ("dependency", "D  dependency"),
               ("pending",  "P  pending (resources)"), ("failed", "F  failed"),
-              ("done",     ".  completed/not in queue")]
+              ("done",     ".  done / not in squeue")]
     for s, label in legend:
         lines.append("  " + nc(STATUS_SYM[s], s, no_color) + "  " + label)
 
@@ -162,17 +163,28 @@ def main():
                         help="SLURM user (default: $USER)")
     parser.add_argument("-p", "--prefix", default="wham_",
                         help="Job name prefix (default: wham_)")
+    parser.add_argument("-r", "--rows", type=int, metavar="N",
+                        help="Total number of axis-1 (row) windows in the 2D grid")
+    parser.add_argument("-c", "--cols", type=int, metavar="N",
+                        help="Total number of axis-2 (col) windows in the 2D grid")
+    parser.add_argument("-n", "--windows", type=int, metavar="N",
+                        help="Total number of 1D windows")
     parser.add_argument("-W", "--watch", nargs="?", const=10, type=int, metavar="INTERVAL",
                         help="Refresh every INTERVAL seconds (default: 10)")
     parser.add_argument("--no-color", action="store_true")
     args = parser.parse_args()
 
+    rows_range   = list(range(1, args.rows    + 1)) if args.rows    else None
+    cols_range   = list(range(1, args.cols    + 1)) if args.cols    else None
+    windows_range = list(range(1, args.windows + 1)) if args.windows else None
+
     def run_once():
         grid_2d, list_1d = query_jobs(args.user, args.prefix)
-        if not grid_2d and not list_1d:
+        if not grid_2d and not list_1d and not rows_range and not windows_range:
             print(f"No wham jobs found for user '{args.user}' with prefix '{args.prefix}'.")
             return False
-        display(grid_2d, list_1d, args.no_color)
+        display(grid_2d, list_1d, args.no_color,
+                rows_range=rows_range, cols_range=cols_range, windows_range=windows_range)
         return True
 
     if args.watch is None:
