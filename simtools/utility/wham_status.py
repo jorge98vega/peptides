@@ -14,8 +14,8 @@ YELLOW     = "\033[33m"
 CYAN       = "\033[36m"
 RED        = "\033[31m"
 DIM        = "\033[2m"
-ORANGE     = "\033[38;5;214m"   # crashed: dump truncated (adjacent to missing)
-ORANGE_RED = "\033[38;5;202m"   # missing: dump not found in dumps/
+#ORANGE = "\033[38;5;214m"
+ORANGE = "\033[38;5;202m"  # missing: dump not found in dumps/
 
 STATUS_COLOR = {
     "running":    GREEN,
@@ -23,8 +23,8 @@ STATUS_COLOR = {
     "pending":    CYAN,
     "failed":     RED,
     "done":       DIM,
-    "missing":    ORANGE_RED,
-    "crashed":    ORANGE,
+    "missing":    ORANGE,
+    "crashed":    RED,
     "none":       "",
 }
 STATUS_SYM = {
@@ -33,8 +33,8 @@ STATUS_SYM = {
     "pending":    "P",
     "failed":     "F",
     "done":       ".",
-    "missing":    ".",
-    "crashed":    ".",
+    "missing":    "!",
+    "crashed":    "!",
     "none":       " ",
 }
 
@@ -283,8 +283,8 @@ def display(grid_2d, list_1d, no_color,
         ("pending",    "P  pending (resources)"),
         ("failed",     "F  failed"),
         ("done",       ".  done"),
-        ("crashed",    ".  crashed  (dump truncated, adjacent to missing)"),
-        ("missing",    ".  missing  (dump not in dumps/)"),
+        ("crashed",    "!  crashed  (dump truncated, adjacent to missing)"),
+        ("missing",    "!  missing  (dump not in dumps/)"),
     ]
     for s, label in legend:
         lines.append("  " + nc(STATUS_SYM[s], s, no_color) + "  " + label)
