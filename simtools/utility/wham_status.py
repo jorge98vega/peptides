@@ -14,6 +14,7 @@ YELLOW = "\033[33m"
 CYAN   = "\033[36m"
 RED    = "\033[31m"
 DIM    = "\033[2m"
+ORANGE = "\033[38;5;214m"
 
 STATUS_COLOR = {
     "running":    GREEN,
@@ -21,6 +22,7 @@ STATUS_COLOR = {
     "pending":    CYAN,
     "failed":     RED,
     "done":       DIM,
+    "missing":    ORANGE,
     "none":       "",
 }
 STATUS_SYM = {
@@ -29,6 +31,7 @@ STATUS_SYM = {
     "pending":    "P",
     "failed":     "F",
     "done":       ".",
+    "missing":    ".",
     "none":       " ",
 }
 
@@ -58,6 +61,26 @@ def ruler(cols, pad):
     tens = pad + "".join(str(j // 10) if j % 10 == 0 else " " for j in cols)
     ones = pad + "".join(str(j % 10) for j in cols)
     return tens, ones
+
+
+def dump_exists(dumps_dir, prefix, i, j, dump_iter):
+    if j is not None:
+        fname = f"{prefix}{i}_{j}_rst_{dump_iter}.dump"
+    else:
+        fname = f"{prefix}{i}_rst_{dump_iter}.dump"
+    return os.path.isfile(os.path.join(dumps_dir, fname))
+
+
+def resolve_status(squeue_status, i, j, has_dims, dumps_dir, prefix, dump_iter):
+    """Return final display status for a window."""
+    if squeue_status is not None:
+        return squeue_status
+    if not has_dims:
+        return "none"
+    # not in squeue and dims are known — check dump
+    if dumps_dir and os.path.isdir(dumps_dir):
+        return "done" if dump_exists(dumps_dir, prefix, i, j, dump_iter) else "missing"
+    return "done"
 
 
 def query_jobs(user, prefix):
@@ -91,7 +114,9 @@ def query_jobs(user, prefix):
     return grid_2d, list_1d
 
 
-def display(grid_2d, list_1d, no_color, rows_range=None, cols_range=None, windows_range=None):
+def display(grid_2d, list_1d, no_color,
+            rows_range=None, cols_range=None, windows_range=None,
+            dumps_dir=None, prefix="wham_", dump_iter=1):
     lines = []
 
     if grid_2d or rows_range:
@@ -108,14 +133,14 @@ def display(grid_2d, list_1d, no_color, rows_range=None, cols_range=None, window
         for i in rows:
             row = f"{i:>{rl}} "
             for j in cols:
-                s = grid_2d.get((i, j), "done" if rows_range else "none")
+                s = resolve_status(grid_2d.get((i, j)), i, j,
+                                   rows_range is not None, dumps_dir, prefix, dump_iter)
                 counts[s] += 1
                 row += nc(STATUS_SYM[s], s, no_color)
             lines.append(row)
 
         queued = sum(counts[s] for s in ("running", "dependency", "pending"))
-        done = counts["done"]
-        summary = f"\n{len(rows)}×{len(cols)} grid  |  done: {done}  in squeue: {queued}  "
+        summary = f"\n{len(rows)}×{len(cols)} grid  |  done: {counts['done']}  missing: {counts['missing']}  in squeue: {queued}  "
         summary += "  ".join(
             f"{nc(STATUS_SYM[s], s, no_color)} {counts[s]}"
             for s in ("running", "dependency", "pending", "failed")
@@ -134,23 +159,28 @@ def display(grid_2d, list_1d, no_color, rows_range=None, cols_range=None, window
         row = pad
         counts: dict[str, int] = defaultdict(int)
         for k in ks:
-            s = list_1d.get(k, "done" if windows_range else "none")
+            s = resolve_status(list_1d.get(k), k, None,
+                               windows_range is not None, dumps_dir, prefix, dump_iter)
             counts[s] += 1
             row += nc(STATUS_SYM[s], s, no_color)
         lines.append(row)
 
-        done = counts["done"]
         queued = sum(counts[s] for s in ("running", "dependency", "pending"))
-        lines.append(f"done: {done}  in squeue: {queued}  " + "  ".join(
+        lines.append(f"done: {counts['done']}  missing: {counts['missing']}  in squeue: {queued}  " + "  ".join(
             f"{nc(STATUS_SYM[s], s, no_color)} {counts[s]}"
             for s in ("running", "dependency", "pending", "failed")
             if counts[s]
         ))
 
     lines.append("")
-    legend = [("running", "R  running"), ("dependency", "D  dependency"),
-              ("pending",  "P  pending (resources)"), ("failed", "F  failed"),
-              ("done",     ".  done / not in squeue")]
+    legend = [
+        ("running",    "R  running"),
+        ("dependency", "D  dependency"),
+        ("pending",    "P  pending (resources)"),
+        ("failed",     "F  failed"),
+        ("done",       ".  done (dump found)"),
+        ("missing",    ".  done but dump missing"),
+    ]
     for s, label in legend:
         lines.append("  " + nc(STATUS_SYM[s], s, no_color) + "  " + label)
 
@@ -169,13 +199,17 @@ def main():
                         help="Total number of axis-2 (col) windows in the 2D grid")
     parser.add_argument("-n", "--windows", type=int, metavar="N",
                         help="Total number of 1D windows")
+    parser.add_argument("-d", "--dumps", default="dumps",
+                        help="Directory containing dump files (default: dumps)")
+    parser.add_argument("--dump-iter", type=int, default=1, metavar="N",
+                        help="Dump file iteration suffix (default: 1)")
     parser.add_argument("-W", "--watch", nargs="?", const=10, type=int, metavar="INTERVAL",
                         help="Refresh every INTERVAL seconds (default: 10)")
     parser.add_argument("--no-color", action="store_true")
     args = parser.parse_args()
 
-    rows_range   = list(range(1, args.rows    + 1)) if args.rows    else None
-    cols_range   = list(range(1, args.cols    + 1)) if args.cols    else None
+    rows_range    = list(range(1, args.rows    + 1)) if args.rows    else None
+    cols_range    = list(range(1, args.cols    + 1)) if args.cols    else None
     windows_range = list(range(1, args.windows + 1)) if args.windows else None
 
     def run_once():
@@ -184,7 +218,8 @@ def main():
             print(f"No wham jobs found for user '{args.user}' with prefix '{args.prefix}'.")
             return False
         display(grid_2d, list_1d, args.no_color,
-                rows_range=rows_range, cols_range=cols_range, windows_range=windows_range)
+                rows_range=rows_range, cols_range=cols_range, windows_range=windows_range,
+                dumps_dir=args.dumps, prefix=args.prefix, dump_iter=args.dump_iter)
         return True
 
     if args.watch is None:
@@ -193,7 +228,7 @@ def main():
     else:
         try:
             while True:
-                print("\033[2J\033[H", end="")  # clear screen, move cursor home
+                print("\033[2J\033[H", end="")
                 print(f"wham_status  —  every {args.watch}s  —  {datetime.now().strftime('%H:%M:%S')}  (Ctrl+C to quit)\n")
                 try:
                     run_once()
