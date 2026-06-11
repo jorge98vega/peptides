@@ -8,13 +8,14 @@ import argparse
 from collections import defaultdict
 from datetime import datetime
 
-RESET  = "\033[0m"
-GREEN  = "\033[32m"
-YELLOW = "\033[33m"
-CYAN   = "\033[36m"
-RED    = "\033[31m"
-DIM    = "\033[2m"
-ORANGE = "\033[38;5;214m"
+RESET      = "\033[0m"
+GREEN      = "\033[32m"
+YELLOW     = "\033[33m"
+CYAN       = "\033[36m"
+RED        = "\033[31m"
+DIM        = "\033[2m"
+ORANGE     = "\033[38;5;214m"   # crashed: dump truncated (adjacent to missing)
+ORANGE_RED = "\033[38;5;202m"   # missing: dump not found in dumps/
 
 STATUS_COLOR = {
     "running":    GREEN,
@@ -22,7 +23,8 @@ STATUS_COLOR = {
     "pending":    CYAN,
     "failed":     RED,
     "done":       DIM,
-    "missing":    ORANGE,
+    "missing":    ORANGE_RED,
+    "crashed":    ORANGE,
     "none":       "",
 }
 STATUS_SYM = {
@@ -32,6 +34,7 @@ STATUS_SYM = {
     "failed":     "F",
     "done":       ".",
     "missing":    ".",
+    "crashed":    ".",
     "none":       " ",
 }
 
@@ -63,24 +66,108 @@ def ruler(cols, pad):
     return tens, ones
 
 
-def dump_exists(dumps_dir, prefix, i, j, dump_iter):
+def dump_path(dumps_dir, prefix, i, j, dump_iter):
     if j is not None:
         fname = f"{prefix}{i}_{j}_rst_{dump_iter}.dump"
     else:
         fname = f"{prefix}{i}_rst_{dump_iter}.dump"
-    return os.path.isfile(os.path.join(dumps_dir, fname))
+    return os.path.join(dumps_dir, fname)
 
 
-def resolve_status(squeue_status, i, j, has_dims, dumps_dir, prefix, dump_iter):
-    """Return final display status for a window."""
+def get_last_step(path):
+    """Return last step number from a dump file by reading its tail."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            if size == 0:
+                return None
+            f.seek(max(0, size - 512))
+            tail = f.read().decode(errors="replace")
+            for line in reversed(tail.splitlines()):
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    return int(float(line.split()[0]))
+    except Exception:
+        return None
+    return None
+
+
+def initial_status(squeue_status, has_dims, dumps_dir, path):
+    """Resolve status for a window not currently in squeue."""
     if squeue_status is not None:
         return squeue_status
     if not has_dims:
         return "none"
-    # not in squeue and dims are known — check dump
     if dumps_dir and os.path.isdir(dumps_dir):
-        return "done" if dump_exists(dumps_dir, prefix, i, j, dump_iter) else "missing"
+        return "done" if os.path.isfile(path) else "missing"
     return "done"
+
+
+def mark_crashed(statuses, dumps_dir, prefix, dump_iter, nsteps, is_2d):
+    """Upgrade 'done' windows adjacent to 'missing' ones to 'crashed' if dump is truncated."""
+    missing = {k for k, v in statuses.items() if v == "missing"}
+    if not missing:
+        return
+    for k, s in list(statuses.items()):
+        if s != "done":
+            continue
+        if is_2d:
+            i, j = k
+            if (i, j - 1) not in missing and (i, j + 1) not in missing:
+                continue
+            p = dump_path(dumps_dir, prefix, i, j, dump_iter)
+        else:
+            if (k - 1) not in missing and (k + 1) not in missing:
+                continue
+            p = dump_path(dumps_dir, prefix, k, None, dump_iter)
+        last = get_last_step(p)
+        if last is not None and last < nsteps:
+            statuses[k] = "crashed"
+
+
+def generate_failed_windows(statuses, rows, cols, output_path):
+    """Write failed_windows.dat: i j k, where k encodes direction of missing dumps."""
+    cols_set = set(cols)
+    entries = []
+    for i in rows:
+        for j in sorted(j for j in cols if statuses.get((i, j)) == "crashed"):
+            left  = (j - 1) in cols_set and statuses.get((i, j - 1)) == "missing"
+            right = (j + 1) in cols_set and statuses.get((i, j + 1)) == "missing"
+            if left and right:
+                k = 0
+            elif right:
+                k = 1
+            elif left:
+                k = -1
+            else:
+                continue
+            entries.append((i, j, k))
+    with open(output_path, "w") as f:
+        for i, j, k in entries:
+            f.write(f"{i} {j} {k}\n")
+    return entries
+
+
+def build_statuses_2d(grid_2d, rows, cols, has_dims, dumps_dir, prefix, dump_iter, nsteps):
+    statuses = {}
+    for i in rows:
+        for j in cols:
+            p = dump_path(dumps_dir, prefix, i, j, dump_iter) if dumps_dir else ""
+            statuses[(i, j)] = initial_status(grid_2d.get((i, j)), has_dims, dumps_dir, p)
+    if dumps_dir and os.path.isdir(dumps_dir):
+        mark_crashed(statuses, dumps_dir, prefix, dump_iter, nsteps, is_2d=True)
+    return statuses
+
+
+def build_statuses_1d(list_1d, ks, has_dims, dumps_dir, prefix, dump_iter, nsteps):
+    statuses = {}
+    for k in ks:
+        p = dump_path(dumps_dir, prefix, k, None, dump_iter) if dumps_dir else ""
+        statuses[k] = initial_status(list_1d.get(k), has_dims, dumps_dir, p)
+    if dumps_dir and os.path.isdir(dumps_dir):
+        mark_crashed(statuses, dumps_dir, prefix, dump_iter, nsteps, is_2d=False)
+    return statuses
 
 
 def query_jobs(user, prefix):
@@ -116,7 +203,8 @@ def query_jobs(user, prefix):
 
 def display(grid_2d, list_1d, no_color,
             rows_range=None, cols_range=None, windows_range=None,
-            dumps_dir=None, prefix="wham_", dump_iter=1):
+            dumps_dir=None, prefix="wham_", dump_iter=1, nsteps=8000,
+            failed_out=None):
     lines = []
 
     if grid_2d or rows_range:
@@ -124,6 +212,9 @@ def display(grid_2d, list_1d, no_color,
         cols = cols_range if cols_range else sorted(set(j for i, j in grid_2d))
         rl = max(len(str(r)) for r in rows)
         pad = " " * (rl + 1)
+
+        statuses = build_statuses_2d(grid_2d, rows, cols, rows_range is not None,
+                                     dumps_dir, prefix, dump_iter, nsteps)
 
         t, o = ruler(cols, pad)
         lines.append(t)
@@ -133,14 +224,17 @@ def display(grid_2d, list_1d, no_color,
         for i in rows:
             row = f"{i:>{rl}} "
             for j in cols:
-                s = resolve_status(grid_2d.get((i, j)), i, j,
-                                   rows_range is not None, dumps_dir, prefix, dump_iter)
+                s = statuses[(i, j)]
                 counts[s] += 1
                 row += nc(STATUS_SYM[s], s, no_color)
             lines.append(row)
 
         queued = sum(counts[s] for s in ("running", "dependency", "pending"))
-        summary = f"\n{len(rows)}×{len(cols)} grid  |  done: {counts['done']}  missing: {counts['missing']}  in squeue: {queued}  "
+        summary = (f"\n{len(rows)}×{len(cols)} grid  |  "
+                   f"done: {counts['done']}  "
+                   f"missing: {counts['missing']}  "
+                   f"crashed: {counts['crashed']}  "
+                   f"in squeue: {queued}  ")
         summary += "  ".join(
             f"{nc(STATUS_SYM[s], s, no_color)} {counts[s]}"
             for s in ("running", "dependency", "pending", "failed")
@@ -148,10 +242,18 @@ def display(grid_2d, list_1d, no_color,
         )
         lines.append(summary)
 
+        if failed_out and counts["crashed"]:
+            entries = generate_failed_windows(statuses, rows, cols, failed_out)
+            lines.append(f"  → wrote {len(entries)} entr{'y' if len(entries)==1 else 'ies'} to {failed_out}")
+
     if list_1d or windows_range:
         ks = windows_range if windows_range else sorted(list_1d)
         rl = max(len(str(k)) for k in ks)
         pad = " " * (rl + 1)
+
+        statuses = build_statuses_1d(list_1d, ks, windows_range is not None,
+                                     dumps_dir, prefix, dump_iter, nsteps)
+
         t, o = ruler(ks, pad)
         lines.append("\n1D windows:")
         lines.append(t)
@@ -159,18 +261,20 @@ def display(grid_2d, list_1d, no_color,
         row = pad
         counts: dict[str, int] = defaultdict(int)
         for k in ks:
-            s = resolve_status(list_1d.get(k), k, None,
-                               windows_range is not None, dumps_dir, prefix, dump_iter)
+            s = statuses[k]
             counts[s] += 1
             row += nc(STATUS_SYM[s], s, no_color)
         lines.append(row)
 
         queued = sum(counts[s] for s in ("running", "dependency", "pending"))
-        lines.append(f"done: {counts['done']}  missing: {counts['missing']}  in squeue: {queued}  " + "  ".join(
-            f"{nc(STATUS_SYM[s], s, no_color)} {counts[s]}"
-            for s in ("running", "dependency", "pending", "failed")
-            if counts[s]
-        ))
+        lines.append(
+            f"done: {counts['done']}  missing: {counts['missing']}  crashed: {counts['crashed']}  in squeue: {queued}  "
+            + "  ".join(
+                f"{nc(STATUS_SYM[s], s, no_color)} {counts[s]}"
+                for s in ("running", "dependency", "pending", "failed")
+                if counts[s]
+            )
+        )
 
     lines.append("")
     legend = [
@@ -178,8 +282,9 @@ def display(grid_2d, list_1d, no_color,
         ("dependency", "D  dependency"),
         ("pending",    "P  pending (resources)"),
         ("failed",     "F  failed"),
-        ("done",       ".  done (dump found)"),
-        ("missing",    ".  done but dump missing"),
+        ("done",       ".  done"),
+        ("crashed",    ".  crashed  (dump truncated, adjacent to missing)"),
+        ("missing",    ".  missing  (dump not in dumps/)"),
     ]
     for s, label in legend:
         lines.append("  " + nc(STATUS_SYM[s], s, no_color) + "  " + label)
@@ -203,6 +308,10 @@ def main():
                         help="Directory containing dump files (default: dumps)")
     parser.add_argument("--dump-iter", type=int, default=1, metavar="N",
                         help="Dump file iteration suffix (default: 1)")
+    parser.add_argument("--nsteps", type=int, default=8000,
+                        help="Expected simulation steps for crash detection (default: 8000)")
+    parser.add_argument("-f", "--failed-out", default="failed_windows.dat", metavar="FILE",
+                        help="Output file for crashed windows (default: failed_windows.dat)")
     parser.add_argument("-W", "--watch", nargs="?", const=10, type=int, metavar="INTERVAL",
                         help="Refresh every INTERVAL seconds (default: 10)")
     parser.add_argument("--no-color", action="store_true")
@@ -219,7 +328,9 @@ def main():
             return False
         display(grid_2d, list_1d, args.no_color,
                 rows_range=rows_range, cols_range=cols_range, windows_range=windows_range,
-                dumps_dir=args.dumps, prefix=args.prefix, dump_iter=args.dump_iter)
+                dumps_dir=args.dumps, prefix=args.prefix,
+                dump_iter=args.dump_iter, nsteps=args.nsteps,
+                failed_out=args.failed_out)
         return True
 
     if args.watch is None:
