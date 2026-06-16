@@ -127,7 +127,7 @@ def mark_crashed(statuses, dumps_dir, prefix, dump_iter, nsteps, is_2d):
 
 
 def generate_failed_windows(statuses, rows, cols, output_path):
-    """Write failed_windows.dat: i j k, where k encodes direction of missing dumps."""
+    """Write failed_windows.dat: i j direction, where direction matches run_all_wham2d.sh."""
     cols_set = set(cols)
     entries = []
     for i in rows:
@@ -135,17 +135,17 @@ def generate_failed_windows(statuses, rows, cols, output_path):
             left  = (j - 1) in cols_set and statuses.get((i, j - 1)) == "missing"
             right = (j + 1) in cols_set and statuses.get((i, j + 1)) == "missing"
             if left and right:
-                k = 0
+                direction = "both"
             elif right:
-                k = 1
+                direction = "next"
             elif left:
-                k = -1
+                direction = "prev"
             else:
                 continue
-            entries.append((i, j, k))
+            entries.append((i, j, direction))
     with open(output_path, "w") as f:
-        for i, j, k in entries:
-            f.write(f"{i} {j} {k}\n")
+        for i, j, direction in entries:
+            f.write(f"{i} {j} {direction}\n")
     return entries
 
 

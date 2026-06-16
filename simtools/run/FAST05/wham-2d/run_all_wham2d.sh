@@ -1,76 +1,45 @@
 #!/bin/bash
+# Lanza trabajos WHAM 2D encadenados por SLURM propagando en la dirección indicada.
+# Uso: ./run_all_wham2d.sh INPUT FIXEDWINDOW WINDOW LIMIT DIRECTION [OLD_JOB_ID]
+#   INPUT        : nombre base del sistema (e.g. 1t8s_1Cl_WAT)
+#   FIXEDWINDOW  : índice de la coordenada fija
+#   WINDOW       : ventana inicial
+#   LIMIT        : última ventana del eje libre
+#   DIRECTION    : both | next | prev | none
+#   OLD_JOB_ID   : (opcional) ID SLURM del que depende este trabajo
+#
+# Ejemplo — windows 10_1 a 10_49, empezando en 10_25 hacia ambos lados:
+#   ./run_all_wham2d.sh 1t8s_1Cl_WAT 10 25 49 both
 
-# Este script automatiza la ejecución de múltiples pasos de la simulación WHAM para cada ventana.
-# Requiere la especificación de la entrada, ventana, límite, paso y el ID de trabajo anterior para encadenar los trabajos de SLURM.
-# Cada paso prepara, ejecuta y organiza los trabajos de la simulación para calcular los perfiles de potencial de free-energy.
-# Ejemplo de cómo usar el script - windows de 10_1 a 10_49, empezando por la 10_25:
-# ./run_all_wham2d.sh 4t8sXwL_run40w 10 25 49 0
+INPUT=$1
+FIXEDWINDOW=$2
+WINDOW=$3
+LIMIT=$4
+DIRECTION=$5
+OLD_JOB_ID=$6
+wd=$(pwd)
 
-INPUT=$1  # Archivo de entrada (por ejemplo, archivo .top de Amber)
-fixedwindow=$2  # Ventana de la coordenada fija
-window=$3  # Número de ventana actual
-limit=$4  # Límite de ventanas (última ventana a procesar)
-step=$5  # Paso actual
-OLD_JOB_ID=$6  # ID del trabajo anterior (para establecer dependencias de ejecución)
-wd=$(pwd)  # Obtener el directorio de trabajo actual
+cp ${wd}/${INPUT}.top ${wd}/MD_wham2d.sh ${wd}/run_wham2d.sh ${wd}/windows/wham_${FIXEDWINDOW}_${WINDOW}/
+cd ${wd}/windows/wham_${FIXEDWINDOW}_${WINDOW}/
+echo "Window ${FIXEDWINDOW}_${WINDOW} - Direction: ${DIRECTION}"
 
-# Si el paso es 0 (preparación inicial):
-if [ $step -eq 0 ]; then
-    # Copiar archivos de entrada a la ventana correspondiente
-    cp ${wd}/${INPUT}.top ${wd}/MD_wham2d.sh ${wd}/run_wham2d.sh ${wd}/wham_${fixedwindow}_${window}/
-    #cp ${wd}/${INPUT}_wham_0.rst ${wd}/wham_${fixedwindowd}_${window}/${INPUT}_wham_${fixedwindow}_${window}_0.rst
-
-    # Cambiar al directorio de la ventana
-    cd ${wd}/wham_${fixedwindow}_${window}/
-    echo "Window ${fixedwindow}_${window} - Step $step"
-    
-    # Enviar trabajo para preparar la ventana y obtener el JOB_ID de SLURM
-    JOB_ID=$(sbatch -J "wham_${fixedwindow}_${window}" run_wham2d.sh $INPUT $fixedwindow $window 1 8000 $step | awk '{print $4}')
-    echo "Job $JOB_ID"
-
-    # Enviar trabajo para la simulación WHAM, dependiente del trabajo anterior
-    #sbatch -J "wham${window}" -d afterany:$((JOB_ID)) run_wham.sh $INPUT $window 2 5000
-    
-    cd $wd
-    # Llamada recursiva para la ventana anterior
-    if [[ $window -gt 1 ]]; then
-        new_window=$((window-1))
-        new_step=$((step-1))
-        ./run_all_wham2d.sh $INPUT $fixedwindow $new_window $limit $new_step $((JOB_ID))
-    fi
-    # Llamada recursiva para la ventana siguiente
-    if [[ $window -lt $limit ]]; then
-        new_window=$((window+1))
-        new_step=$((step+1))
-        ./run_all_wham2d.sh $INPUT $fixedwindow $new_window $limit $new_step $((JOB_ID))
-    fi
-
-# Si el paso no es 0:
+if [[ -z $OLD_JOB_ID ]]; then
+    JOB_ID=$(sbatch -J "wham_${FIXEDWINDOW}_${WINDOW}" run_wham2d.sh $INPUT $FIXEDWINDOW $WINDOW 1 8000 $DIRECTION | awk '{print $4}')
 else
-    # Copiar archivos de entrada a la ventana correspondiente
-    cp ${wd}/${INPUT}.top ${wd}/MD_wham2d.sh ${wd}/run_wham2d.sh ${wd}/wham_${fixedwindow}_${window}/
-    
-    # Cambiar al directorio de la ventana
-    cd ${wd}/wham_${fixedwindow}_${window}/
-    echo "Window ${fixedwindow}_${window} - Step $step"
-    
-    # Enviar trabajo para preparar la ventana, dependiente del trabajo anterior
-    JOB_ID=$(sbatch -J "wham_${fixedwindow}_${window}" -d afterok:${OLD_JOB_ID} run_wham2d.sh $INPUT $fixedwindow $window 1 8000 $step | awk '{print $4}')
-    echo "Job $JOB_ID"
+    JOB_ID=$(sbatch -J "wham_${FIXEDWINDOW}_${WINDOW}" -d afterok:${OLD_JOB_ID} run_wham2d.sh $INPUT $FIXEDWINDOW $WINDOW 1 8000 $DIRECTION | awk '{print $4}')
+fi
+echo "Job $JOB_ID"
 
-    # Enviar trabajo para la simulación WHAM, dependiente del trabajo anterior
-    #sbatch -J "wham${window}" -d afterany:$((JOB_ID)) run_wham.sh $INPUT $window 2 5000
-    
-    cd $wd
-    # Llamada recursiva para la ventana anterior si el paso es negativo y la ventana es mayor que 0
-    if [[ $step -lt 0 ]] && [[ $window -gt 1 ]]; then
-        new_window=$((window-1))
-        new_step=$((step-1))
-        ./run_all_wham2d.sh $INPUT $fixedwindow $new_window $limit $new_step $((JOB_ID))
-    # Llamada recursiva para la ventana siguiente si el paso es positivo y la ventana es menor que el límite
-    elif [[ $step -gt 0 ]] && [[ $window -lt $limit ]]; then
-        new_window=$((window+1))
-        new_step=$((step+1))
-        ./run_all_wham2d.sh $INPUT $fixedwindow $new_window $limit $new_step $((JOB_ID))
+cd $wd
+
+if [[ $DIRECTION == "both" ]] || [[ $DIRECTION == "prev" ]]; then
+    if [[ $WINDOW -gt 1 ]]; then
+        ./run_all_wham2d.sh $INPUT $FIXEDWINDOW $((WINDOW-1)) $LIMIT prev $JOB_ID
     fi
 fi
+if [[ $DIRECTION == "both" ]] || [[ $DIRECTION == "next" ]]; then
+    if [[ $WINDOW -lt $LIMIT ]]; then
+        ./run_all_wham2d.sh $INPUT $FIXEDWINDOW $((WINDOW+1)) $LIMIT next $JOB_ID
+    fi
+fi
+# direction=none: no recursion

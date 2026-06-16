@@ -3,13 +3,14 @@
 # Definir los parámetros locales y configurar las opciones necesarias para la simulación
 set -e
 
-INPUT=$1  # Nombre del archivo de entrada (por ejemplo, archivo .top de Amber)
+INPUT=$1        # Nombre del archivo de entrada (por ejemplo, archivo .top de Amber)
 FIXEDWINDOW=$2  # Número de la ventana de la coordenada fija
-WINDOW=$3  # Número de la ventana actual en la simulación WHAM
-ITER=$4  # Número de iteración actual
-NSTEPS=$5  # Número de pasos de simulación
-JOB=${INPUT}_wham_${FIXEDWINDOW}_${WINDOW}_${ITER}  # Nombre del trabajo basado en la entrada y la ventana/iteración
-PREV=$((ITER-1))  # Iteración anterior
+WINDOW=$3       # Número de la ventana actual en la simulación WHAM
+ITER=$4         # Número de iteración actual
+NSTEPS=$5       # Número de pasos de simulación
+DIRECTION=$6    # Ventanas a sembrar al terminar iter 1: both | next | prev | none
+JOB=${INPUT}_wham_${FIXEDWINDOW}_${WINDOW}_${ITER}
+PREV=$((ITER-1))
 
 #######################################################################
 # PREPARAR LA SIMULACIÓN AMBER (QM/MM)
@@ -57,23 +58,17 @@ $AMBERHOME/bin/sander -O -i amberwham.in \
     -x ${JOB}.nc \
     -r ${JOB}.rst > ${JOB}.out
 
-# Si es la primera iteración, copiar los archivos de resultados a las siguientes ventanas
+# En la primera iteración, sembrar el rst a las ventanas vecinas según DIRECTION
 if [[ $ITER -eq 1 ]]; then
     # SLURM_SUBMIT_DIR is the original wham_${FIXEDWINDOW}_${WINDOW}/ directory (before startjob moved to scratch)
     ORIG_DIR=${SLURM_SUBMIT_DIR:-$(pwd)}
-    if [[ $6 -eq 0 ]]; then
-        # Si la condición es 0, se copian los archivos a la ventana anterior y siguiente
-        NEXT_WINDOW=$((WINDOW-1))
-        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
-        NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
-    elif [[ $6 -lt 0 ]]; then
-        # Si el paso es negativo, solo copiar a la ventana anterior
-        NEXT_WINDOW=$((WINDOW-1))
-        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
-    elif [[ $6 -gt 0 ]]; then
-        # Si el paso es positivo, solo copiar a la ventana siguiente
-        NEXT_WINDOW=$((WINDOW+1))
-        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst
+    if [[ $DIRECTION == "both" ]] || [[ $DIRECTION == "prev" ]]; then
+        PREV_WINDOW=$((WINDOW-1))
+        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${PREV_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${PREV_WINDOW}_0.rst || true
     fi
+    if [[ $DIRECTION == "both" ]] || [[ $DIRECTION == "next" ]]; then
+        NEXT_WINDOW=$((WINDOW+1))
+        cp ${JOB}.rst ${ORIG_DIR}/../wham_${FIXEDWINDOW}_${NEXT_WINDOW}/${INPUT}_wham_${FIXEDWINDOW}_${NEXT_WINDOW}_0.rst || true
+    fi
+    # direction=none: no seeding
 fi

@@ -26,7 +26,7 @@ def load_dump_files(directory, prefix="wham", suffix="_rst_1.dump"):
             print(f"Warning: could not read {f}: {e}")
     if not blocks:
         raise FileNotFoundError(f"No dump files matching '{prefix}*{suffix}' found in {directory}")
-    return np.vstack(blocks), lengths
+    return np.vstack(blocks), lengths, files
 
 
 def plot_single(path, select=None, nmax=None, last=None, out="restraints_plot.png"):
@@ -80,31 +80,35 @@ def plot_single(path, select=None, nmax=None, last=None, out="restraints_plot.pn
 
 def plot_umbrella(directory, ymin=None, ymax=None, first_center=None, step_center=None,
                   nmax=10, prefix="wham", suffix="_rst_1.dump", out="umbrella_restraints_plot.png"):
-    data, lengths = load_dump_files(directory, prefix, suffix)
+    data, lengths, files = load_dump_files(directory, prefix, suffix)
     steps = np.arange(len(data))
     rsts  = data[:, 1:]
 
-    plt.figure(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
     for idx in range(min(nmax, rsts.shape[1])):
-        plt.plot(steps, rsts[:, idx], label=f"Restraint {idx+1}", alpha=0.8)
+        ax.plot(steps, rsts[:, idx], label=f"Restraint {idx+1}", alpha=0.8)
 
     start_idx = 0
-    for i, split in enumerate(np.cumsum(lengths)):
-        plt.axvline(split, color="gray", lw=1)
+    for i, (split, fname) in enumerate(zip(np.cumsum(lengths), files)):
+        ax.axvline(split, color="gray", lw=1)
+        mid = (start_idx + split) / 2
+        label = fname[len(prefix):len(fname)-len(suffix)].strip("_")
+        ax.text(mid, 1.0, label, transform=ax.get_xaxis_transform(),
+                ha="center", va="bottom", fontsize=7, rotation=90, color="dimgray")
         if first_center is not None and step_center is not None:
             center = first_center + i * step_center
-            plt.hlines(center, start_idx, split, colors="black", linestyles="--", lw=1)
-            start_idx = split
+            ax.hlines(center, start_idx, split, colors="black", linestyles="--", lw=1)
+        start_idx = split
 
-    plt.xlabel("Concatenated step")
-    plt.ylabel("Restraint value")
-    plt.title("Umbrella sampling restraints across windows")
-    plt.legend()
-    plt.grid(True, axis="y")
+    ax.set_xlabel("Concatenated step")
+    ax.set_ylabel("Restraint value")
+    ax.set_title("Umbrella sampling restraints across windows")
+    ax.legend()
+    ax.grid(True, axis="y")
     if ymin is not None or ymax is not None:
-        plt.ylim(bottom=ymin, top=ymax)
-    plt.tight_layout()
-    plt.savefig(out, dpi=300)
+        ax.set_ylim(bottom=ymin, top=ymax)
+    fig.tight_layout()
+    fig.savefig(out, dpi=300)
     print(f"Saved: {out}")
     plt.show()
 

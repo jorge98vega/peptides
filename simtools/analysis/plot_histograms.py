@@ -62,7 +62,7 @@ def main():
     plt.xlabel(f"Column {args.col}")
     plt.ylabel("Count")
     plt.title(f"Coordinate distributions across windows (col {args.col})")
-    plt.legend(ncol=2, fontsize=8)
+    #plt.legend(ncol=2, fontsize=8)
     plt.tight_layout()
     plt.show()
 
