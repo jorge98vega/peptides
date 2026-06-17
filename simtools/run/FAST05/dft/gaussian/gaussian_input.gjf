@@ -1,0 +1,11 @@
+%mem=8000Mb
+%NProcShared=4
+%chk=system.chk
+#P B3LYP/6-31G(d,p) SP Pop=Full IOp(3/33=1) SCF=Tight
+
+system description
+
+0 1
+ N   ...
+ ...
+

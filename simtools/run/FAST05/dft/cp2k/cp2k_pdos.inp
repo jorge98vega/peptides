@@ -1,0 +1,111 @@
+&GLOBAL
+  PROJECT system
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD QS
+
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+
+    &MGRID
+      CUTOFF 400
+    &END MGRID
+
+    &XC
+      &XC_FUNCTIONAL BLYP
+      &END XC_FUNCTIONAL
+
+      &VDW_POTENTIAL
+        POTENTIAL_TYPE PAIR_POTENTIAL
+        &PAIR_POTENTIAL
+          TYPE DFTD3
+          PARAMETER_FILE_NAME dftd3.dat
+          REFERENCE_FUNCTIONAL BLYP
+        &END
+      &END VDW_POTENTIAL
+    &END XC
+
+    &SCF
+      EPS_SCF 1.0E-6
+      SCF_GUESS ATOMIC
+      MAX_SCF 100
+    &END SCF
+
+    &PRINT
+      &DOS
+      &END DOS
+
+      &PDOS
+        NLUMO -1
+        &LDOS
+          # list1: All atoms (used as total DOS by cp2k_pdos2dat.sh)
+          LIST 1 2 3 ... N
+        &END
+        &LDOS
+          # list2: Backbone heavy atoms
+          LIST ...
+        &END
+        &LDOS
+          # list3: Backbone Hs
+          LIST ...
+        &END
+        &LDOS
+          # list4: LYS heavy atoms
+          LIST ...
+        &END
+        &LDOS
+          # list5: LYS Hs
+          LIST ...
+        &END
+        &LDOS
+          # list6: PHE heavy atoms
+          LIST ...
+        &END
+        &LDOS
+          # list7: PHE Hs
+          LIST ...
+        &END
+      &END PDOS
+    &END PRINT
+  &END DFT
+
+  &SUBSYS
+    &CELL
+      A [angstrom]  20.40000      0.000000      0.000000
+      B [angstrom]  0.000000      20.40000      0.000000
+      C [angstrom]  0.000000      0.000000      9.900000
+      PERIODIC XYZ
+    &END CELL
+
+    &TOPOLOGY
+      COORD_FILE_NAME  input.xyz
+      COORD_FILE_FORMAT xyz
+      &CENTER_COORDINATES
+      &END
+    &END TOPOLOGY
+
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-BLYP
+    &END KIND
+
+    &KIND C
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-BLYP
+    &END KIND
+
+    &KIND N
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-BLYP
+    &END KIND
+
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-BLYP
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

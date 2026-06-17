@@ -1,0 +1,23 @@
+&option
+fdatalocation = '/home/jorge/Fireball/Fdatas/Fdata_HCNOS_ext/'
+basisfile = 'system.bas'
+lvsfile = 'system.lvs'
+kptpreference = 'system.kpts'
+ixczw = 0
+idipole = 0
+iqout = 3
+ifixcharge = 1
+idftd3 = 1
+dftd3_func = 'fb_bio'
+icluster = 0
+iquench = -1
+sigmatol = 0.00000001
+nstepf = 1
+&end
+&output
+iwrtxyz = 1
+iwrteigen = 0
+iwrtcdcoefs = 0
+iwrtewf = 0
+iwrtdos = 1
+&end
