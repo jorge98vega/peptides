@@ -5,10 +5,11 @@ and optionally generate a two-column window-map file for 2D umbrella sampling.
 
 Typical workflow (2D umbrella prep):
   1. gen_rst.py --config cfg.json --start -1.2 --stop 1.2 --step 0.1
-     (2nd restraint has umbrella=0, r2=r3=7.777 as placeholder)
-  2. Run 1D wham with 2nd restraint monitoring only (rk=0)
+     (2nd restraint has rk=0,  monitoring only)
+  2. Run 1D wham
   3. compute_window_means.py dumps/ --cols 7 --last 5000 --out window_means.dat
-  4. replace_rst_centers.py window_means.dat --col 7 --placeholder 7.777 --round 0.05
+  4. gen_rst.py again (now 2nd restraint has umbrella=0, r2=r3=7.777 as placeholder, rk!=0)
+  5. replace_rst_centers.py window_means.dat --col 7 --placeholder 7.777 --round 0.05
                             --axis2-start -1.2 --axis2-stop 1.2 --windows-out first_windows.dat
 """
 import os

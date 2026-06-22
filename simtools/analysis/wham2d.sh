@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: wham2d.sh <input> <Nsteps1> <start1> <step1> <2rk1> <col1> <Nsteps2> <start2> <step2> <2rk2> <col2> <last>
+# Usage: wham2d.sh <input> <Nsteps1> <start1> <step1> <2rk1> <col1> <Nsteps2> <start2> <step2> <2rk2> <col2> <last> [maskfile]
 #   input   : dump file base name (files expected as <input>_<i>_<j>_rst_1.dump)
 #   Nsteps1 : number of windows in dim 1 (loop runs 1..Nsteps1)
 #   start1  : center of the first window in dim 1
@@ -12,9 +12,11 @@
 #   2rk2    : force constant x2 for dim 2 written to meta.dat
 #   col2    : column index of the dim 2 rst coordinate in the dump file
 #   last    : number of trailing rows to keep from each dump
+#   maskfile: (optional) file with lines "i jmin jmax" to restrict the j range per row i
+#             rows not listed use the full range 1..Nsteps2
 
-if [ "$#" -ne 12 ]; then
-    echo "Usage: $0 <input> <Nsteps1> <start1> <step1> <2rk1> <col1> <Nsteps2> <start2> <step2> <2rk2> <col2> <last>"
+if [ "$#" -lt 12 ] || [ "$#" -gt 13 ]; then
+    echo "Usage: $0 <input> <Nsteps1> <start1> <step1> <2rk1> <col1> <Nsteps2> <start2> <step2> <2rk2> <col2> <last> [maskfile]"
     exit 1
 fi
 
@@ -30,6 +32,18 @@ STEP2=$9
 TWO_RK2=${10}
 COL2=${11}
 LAST=${12}
+MASK_FILE="${13:-}"
+
+# Return "jmin jmax" for row i: from maskfile if present, otherwise full range
+j_range() {
+    local i=$1
+    if [ -n "$MASK_FILE" ] && [ -f "$MASK_FILE" ]; then
+        local line
+        line=$(awk -v i="$i" '$1==i {print $2, $3; exit}' "$MASK_FILE")
+        [ -n "$line" ] && echo "$line" && return
+    fi
+    echo "1 $NSTEPS2"
+}
 
 LAST_CENTER1=$(echo "scale=3; $START1 + ($NSTEPS1-1)*$STEP1" | bc)
 LAST_CENTER2=$(echo "scale=3; $START2 + ($NSTEPS2-1)*$STEP2" | bc)
@@ -51,9 +65,15 @@ touch meta.dat
 
 for i in $(seq 1 $NSTEPS1); do
     b1=$(echo "scale=3; $START1 + ($i-1)*$STEP1" | bc)
-    for j in $(seq 1 $NSTEPS2); do
+    read jmin jmax <<< $(j_range $i)
+    for j in $(seq $jmin $jmax); do
+        DUMP="${INPUT}_${i}_${j}_rst_1.dump"
+        if [ ! -f "$DUMP" ]; then
+            echo "WARNING: missing $DUMP, skipping" >&2
+            continue
+        fi
         b2=$(echo "scale=3; $START2 + ($j-1)*$STEP2" | bc)
-        awk -v c1=$COL1 -v c2=$COL2 '{print $1,$c1,$c2}' ${INPUT}_${i}_${j}_rst_1.dump | tail -${LAST} > w1_${i}_${j}.out
+        awk -v c1=$COL1 -v c2=$COL2 '{print $1,$c1,$c2}' "$DUMP" | tail -${LAST} > w1_${i}_${j}.out
         echo w1_${i}_${j}.out ${b1} ${b2} ${TWO_RK1} ${TWO_RK2} >> meta.dat
     done
 done

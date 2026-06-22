@@ -50,6 +50,8 @@ def main():
                         help="Dump file name suffix (default: _rst_1.dump)")
     parser.add_argument("--out",    default="window_means.dat",
                         help="Output file (default: window_means.dat)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print per-window stats to terminal (default: silent)")
     args = parser.parse_args()
 
     if 1 in args.cols:
@@ -79,9 +81,10 @@ def main():
             stats = load_dump_file(fp, args.cols, args.last)
             vals  = " ".join(f"{m:.6f} {s:.6f}" for m, s in stats)
             rows.append(f"{label} {vals}")
-            print(f"  {fn}  ->  window {label:>6s}  " +
-                  "  ".join(f"col{c}: {m:.4f} ± {s:.4f}"
-                             for c, (m, s) in zip(args.cols, stats)))
+            if args.verbose:
+                print(f"  {fn}  ->  window {label:>6s}  " +
+                      "  ".join(f"col{c}: {m:.4f} ± {s:.4f}"
+                                 for c, (m, s) in zip(args.cols, stats)))
         except Exception as e:
             print(f"Warning: skipping {fn}: {e}")
 
@@ -90,7 +93,8 @@ def main():
         for row in rows:
             f.write(row + "\n")
 
-    print(f"\nSaved: {args.out}  ({len(rows)} windows)")
+    if args.verbose:
+        print(f"\nSaved: {args.out}  ({len(rows)} windows)")
 
 
 if __name__ == "__main__":
