@@ -3,13 +3,14 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 import argparse
 
 
 def read_wham2d(filepath):
     data = np.loadtxt(filepath)
     if data.shape[1] < 3:
-        print("❌ El archivo WHAM2D debe tener al menos tres columnas (x, y, F).")
+        print("Error: WHAM2D file must have at least 3 columns (x, y, F).")
         sys.exit(1)
     x = data[:, 0]
     y = data[:, 1]
@@ -18,7 +19,7 @@ def read_wham2d(filepath):
     y_unique = np.unique(y)
     nx, ny = len(x_unique), len(y_unique)
     if nx * ny != len(F):
-        print("⚠️ Advertencia: los datos no parecen formar una grilla regular.")
+        print("Warning: data does not form a regular grid.")
         sys.exit(1)
     Z = F.reshape((nx, ny)).T   # Z[iy, ix]
     Z[Z > 1e6] = np.nan
@@ -27,9 +28,7 @@ def read_wham2d(filepath):
 
 
 def read_meta(meta_file):
-    """Parse meta.dat and return arrays: i, j (int), cx, cy (float).
-    Expected format per line: w1_I_J.out cx cy rk1 rk2
-    """
+    """Parse meta.dat → list of (i, j, cx, cy)."""
     import re
     rows = []
     with open(meta_file) as f:
@@ -101,36 +100,95 @@ def find_mfep(Z, criterion="minsum"):
     return path_iy
 
 
+def make_map_figure(x_unique, y_unique, fig_width):
+    """Create figure + axes for the 2D map.
+
+    Figure height is computed so the axes region has the same physical aspect
+    ratio as the data (equal Angstrom per inch on both axes). make_axes_locatable
+    keeps the colorbar flush with the axes regardless of aspect ratio.
+    """
+    x_range = x_unique[-1] - x_unique[0]
+    y_range = y_unique[-1] - y_unique[0]
+    data_aspect = y_range / x_range if x_range > 0 else 1.0
+
+    # Map panel width is ~72% of total figure width (rest: colorbar + margins)
+    map_panel_w = fig_width * 0.72
+    map_panel_h = map_panel_w * data_aspect
+    # Add fixed vertical space for title + x-label + ticks
+    fig_height = map_panel_h + 1.1
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    return fig, ax
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Pinta el mapa 2D de energía libre obtenido de WHAM2D")
+    parser = argparse.ArgumentParser(
+        description="Plot 2D free energy surface from WHAM2D output")
     parser.add_argument("--path", type=str, required=True,
-                        help="Directorio que contiene el archivo de salida de WHAM2D (por defecto 'wham2d.out')")
+                        help="Directory containing the WHAM2D output file")
     parser.add_argument("--file", type=str, default="wham2d.out",
-                        help="Nombre del archivo de salida de WHAM2D (default: wham2d.out)")
+                        help="WHAM2D output filename (default: wham2d.out)")
     parser.add_argument("--zlim", type=float, nargs=2, default=None,
-                        help="Rango opcional para la escala de energía libre (por ejemplo --zlim 0 10)")
+                        help="Free energy color scale limits (e.g. --zlim 0 10)")
     parser.add_argument("--save", type=str, default=None,
-                        help="Ruta opcional para guardar el gráfico (por ejemplo --save fe_map.png). "
-                             "Si se usa con --meansfile, el gráfico 1D se guarda con sufijo _1d.")
+                        help="Save 2D map to this path; 1D profile gets _1d suffix")
     parser.add_argument("--meansfile", type=str, nargs="+", default=None,
-                        help="Archivo con los valores medios (window mean_c1 std_c1 mean_c2 std_c2) "
-                             "para dibujar la trayectoria 1D sobre el mapa 2D")
+                        help="Window means files (w mean1 std1 mean2 std2) to overlay")
     parser.add_argument("--mfep", action="store_true",
-                        help="Compute and overlay the minimum free energy path on the 2D map")
-    parser.add_argument("--mfep-criterion", default="minsum", choices=["minsum", "minimax"],
-                        help="MFEP optimisation criterion: minsum (default) follows valley floors; "
-                             "minimax finds the lowest saddle crossing")
+                        help="Compute and overlay the minimum free energy path")
+    parser.add_argument("--mfep-criterion", default="minsum",
+                        choices=["minsum", "minimax"],
+                        help="MFEP criterion: minsum (default) or minimax")
     parser.add_argument("--save-path", default=None,
-                        help="Save MFEP path to a text file. "
-                             "Columns: x1 x2 F. If --meta is given, prepends i j window indices.")
+                        help="Save MFEP path to text file (x1 x2 F; "
+                             "prepends i j if --meta is given)")
     parser.add_argument("--meta", default=None,
-                        help="meta.dat file (wham2d format: w1_i_j.out cx cy rk1 rk2). "
-                             "Used to map MFEP coordinates to the nearest window (i, j).")
+                        help="meta.dat (w1_i_j.out cx cy rk1 rk2) "
+                             "to map MFEP coordinates to window indices")
+    # --- Presentation figure controls ---
+    parser.add_argument("--fig-width", type=float, default=7.0,
+                        help="Total figure width in inches (default: 7). "
+                             "Height is computed from the data aspect ratio.")
+    parser.add_argument("--dpi", type=int, default=300,
+                        help="Resolution when saving (default: 300)")
+    parser.add_argument("--fontsize", type=int, default=14,
+                        help="Base font size; labels and title scale from this (default: 14)")
+    parser.add_argument("--xlabel", type=str,
+                        default="Reaction coordinate x$_1$ (Å)",
+                        help="X-axis label")
+    parser.add_argument("--ylabel", type=str,
+                        default="Reaction coordinate x$_2$ (Å)",
+                        help="Y-axis label")
+    parser.add_argument("--title", type=str, default="Free energy surface",
+                        help="Figure title; pass empty string '' to suppress")
+    parser.add_argument("--title-1d", type=str, default="Free energy 1D profile",
+                        help="Title for the 1D profile figure; pass empty string '' to suppress")
+    parser.add_argument("--labels", type=str, nargs="+", default=None,
+                        help="Legend labels for --meansfile curves, one per file "
+                             "(default: 'Trajectory N')")
+    parser.add_argument("--no-legend", action="store_false", dest="legend",
+                        help="Hide the legend on all figures")
+    # --- Contours ---
+    parser.add_argument("--contours", type=int, default=0,
+                        help="Number of isoenergy contour lines (default: 0 = off)")
+    parser.add_argument("--contour-smooth", type=float, default=1.0,
+                        help="Gaussian smoothing sigma for contours (default: 1.0; 0 = none)")
+    parser.add_argument("--contour-color", type=str, default="white",
+                        help="Contour line color (default: white)")
+    parser.add_argument("--contour-lw", type=float, default=0.9,
+                        help="Contour line width (default: 0.9)")
+    parser.add_argument("--contour-alpha", type=float, default=0.7,
+                        help="Contour line opacity (default: 0.7)")
     args = parser.parse_args()
+
+    fs   = args.fontsize
+    fs_l = int(round(fs * 1.15))   # axis labels
+    fs_t = int(round(fs * 1.30))   # title
+    fs_c = int(round(fs * 0.90))   # colorbar / tick labels
 
     filepath = os.path.join(args.path, args.file)
     if not os.path.isfile(filepath):
-        print(f"❌ No se encontró el archivo: {filepath}")
+        print(f"Error: file not found: {filepath}")
         sys.exit(1)
 
     x_unique, y_unique, Z = read_wham2d(filepath)
@@ -139,27 +197,77 @@ def main():
     cmap = plt.get_cmap("turbo").copy()
     cmap.set_bad(alpha=0)
 
-    plt.figure(1, figsize=(6, 12))
-    c = plt.pcolormesh(X, Y, Z, shading='auto', cmap=cmap)
-    cbar = plt.colorbar(c)
-    cbar.set_label(label="Free energy (kcal/mol)", size=18)
-    cbar.ax.tick_params(labelsize=15)
+    # --- Figure 1: 2D map ---
+    fig1, ax1 = make_map_figure(x_unique, y_unique, args.fig_width)
+
+    pm = ax1.pcolormesh(X, Y, Z, shading='auto', cmap=cmap)
+    ax1.set_aspect('equal')
+
+    # Colorbar flush with axes height (make_axes_locatable handles equal-aspect correctly)
+    divider = make_axes_locatable(ax1)
+    cax = divider.append_axes("right", size="5%", pad=0.18)
+    cbar = fig1.colorbar(pm, cax=cax)
+    cbar.set_label("Free energy (kcal/mol)", size=fs_l)
 
     if args.zlim:
-        plt.clim(args.zlim)
+        pm.set_clim(args.zlim)
 
-    plt.xlabel("Reaction coordinate x$_1$ (Å)", fontsize=18)
-    plt.ylabel("Reaction coordinate x$_2$ (Å)", fontsize=18)
-    plt.title("Free energy surface", fontsize=21)
-    plt.tick_params(axis='both', labelsize=15)
-    plt.tight_layout()
+    ax1.set_xlabel(args.xlabel, fontsize=fs_l)
+    ax1.set_ylabel(args.ylabel, fontsize=fs_l)
+    if args.title:
+        ax1.set_title(args.title, fontsize=fs_t, pad=10)
 
-    # --- MFEP overlay ---
+    # Ticks on all four sides; labels only on left/bottom
+    ax1.tick_params(axis='both', which='both',
+                    top=True, right=True,
+                    labeltop=False, labelright=False,
+                    width=1.5, length=5, labelsize=fs_c)
+    # Thicker frame
+    for spine in ax1.spines.values():
+        spine.set_linewidth(1.5)
+
+    cbar.outline.set_linewidth(1.5)
+    cbar.ax.tick_params(width=1.5, length=4, labelsize=fs_c)
+
+    # --- Isoenergy contours ---
+    if args.contours > 0:
+        Z_draw = Z.copy()
+        if args.contour_smooth > 0:
+            from scipy.ndimage import gaussian_filter
+            mask   = np.isfinite(Z_draw)
+            vsum   = gaussian_filter(np.where(mask, Z_draw, 0.0), args.contour_smooth)
+            wsum   = gaussian_filter(mask.astype(float), args.contour_smooth)
+            Z_draw = np.where(mask, vsum / np.where(wsum > 0, wsum, 1.0), np.nan)
+        # Extend grid by half a cell on each side so contours reach the plot edge
+        # (pcolormesh already extends that far; contour stops at the last data point)
+        dx = np.mean(np.diff(x_unique))
+        dy = np.mean(np.diff(y_unique))
+        x_ext = np.r_[x_unique[0] - dx/2, x_unique, x_unique[-1] + dx/2]
+        y_ext = np.r_[y_unique[0] - dy/2, y_unique, y_unique[-1] + dy/2]
+        X_ext, Y_ext = np.meshgrid(x_ext, y_ext)
+        # Linear extrapolation at each edge so isolines continue in the same direction
+        ny_d, nx_d = Z_draw.shape
+        Z_ext = np.empty((ny_d + 2, nx_d + 2))
+        Z_ext[1:-1, 1:-1] = Z_draw
+        Z_ext[1:-1,  0]   = 2*Z_draw[:,  0] - Z_draw[:,  1]
+        Z_ext[1:-1, -1]   = 2*Z_draw[:, -1] - Z_draw[:, -2]
+        Z_ext[0,  1:-1]   = 2*Z_draw[ 0, :] - Z_draw[ 1, :]
+        Z_ext[-1, 1:-1]   = 2*Z_draw[-1, :] - Z_draw[-2, :]
+        Z_ext[ 0,  0]     = (Z_ext[ 0, 1] + Z_ext[ 1,  0]) / 2
+        Z_ext[ 0, -1]     = (Z_ext[ 0,-2] + Z_ext[ 1, -1]) / 2
+        Z_ext[-1,  0]     = (Z_ext[-2, 0] + Z_ext[-1,  1]) / 2
+        Z_ext[-1, -1]     = (Z_ext[-2,-1] + Z_ext[-1, -2]) / 2
+        ax1.contour(X_ext, Y_ext, Z_ext, levels=args.contours,
+                    colors=args.contour_color, linewidths=args.contour_lw,
+                    alpha=args.contour_alpha)
+
+    # --- MFEP: compute path data ---
+    path_x = path_y = path_F = None
     if args.mfep:
         path_iy = find_mfep(Z, criterion=args.mfep_criterion)
-        path_x = x_unique
-        path_y = np.array([y_unique[iy] for iy in path_iy])
-        path_F = np.array([Z[iy, ix] for ix, iy in enumerate(path_iy)])
+        path_x  = x_unique
+        path_y  = np.array([y_unique[iy] for iy in path_iy])
+        path_F  = np.array([Z[iy, ix] for ix, iy in enumerate(path_iy)])
 
         if args.save_path:
             if args.meta:
@@ -167,48 +275,58 @@ def main():
                 ij = np.array([nearest_window(x, y, meta_rows)
                                for x, y in zip(path_x, path_y)], dtype=int)
                 data_out = np.column_stack([ij, path_x, path_y, path_F])
-                header = "i  j  x1  x2  F_kcal_mol"
-                fmt = ["%d", "%d", "%.6f", "%.6f", "%.6f"]
+                header   = "i  j  x1  x2  F_kcal_mol"
+                fmt      = ["%d", "%d", "%.6f", "%.6f", "%.6f"]
             else:
                 data_out = np.column_stack([path_x, path_y, path_F])
-                header = "x1  x2  F_kcal_mol"
-                fmt = "%.6f"
+                header   = "x1  x2  F_kcal_mol"
+                fmt      = "%.6f"
             np.savetxt(args.save_path, data_out, header=header, fmt=fmt)
             print(f"Path saved: {args.save_path}")
 
-        plt.figure(1)
-        plt.plot(path_x, path_y, 'w-', lw=2, label="MFEP")
-        plt.scatter(path_x, path_y, c='white', s=20, zorder=5)
+        ax1.plot(path_x, path_y, 'w-', lw=2, label="MFEP")
+        ax1.scatter(path_x, path_y, c='white', s=20, zorder=5)
 
-        plt.figure(2)
-        plt.plot(path_x, path_F, 'o-', color='gray', lw=2, label="MFEP")
+    # --- Figure 2: 1D profile (created lazily when needed) ---
+    fig2, ax2 = None, None
+
+    def get_ax2():
+        nonlocal fig2, ax2
+        if ax2 is None:
+            fig2, ax2 = plt.subplots(figsize=(7, 5))
+        return ax2
+
+    if args.mfep:
+        get_ax2().plot(path_x, path_F, 'o-', color='gray', lw=2, label="MFEP")
 
     # --- meansfile trajectories ---
     if args.meansfile:
         from scipy.spatial import cKDTree
 
-        colors = ["skyblue", "orange", "lime", "magenta"]
+        colors     = ["skyblue", "orange", "lightgreen", "violet"]
         valid_mask = np.isfinite(Z.ravel()) & (Z.ravel() < 1e6)
         coords_valid = np.column_stack([X.ravel()[valid_mask], Y.ravel()[valid_mask]])
-        F_valid = Z.ravel()[valid_mask]
-        tree = cKDTree(coords_valid) if len(coords_valid) > 0 else None
+        F_valid    = Z.ravel()[valid_mask]
+        tree       = cKDTree(coords_valid) if len(coords_valid) > 0 else None
 
         for idx, means_file in enumerate(args.meansfile):
             if not os.path.isfile(means_file):
-                print(f"⚠️ No se encontró el archivo {means_file}")
+                print(f"Warning: file not found: {means_file}")
                 continue
 
             means = np.loadtxt(means_file)
             if means.shape[1] < 5:
-                print(f"⚠️ El archivo {means_file} no tiene 5 columnas.")
+                print(f"Warning: {means_file} needs 5 columns.")
                 continue
 
-            color = colors[idx % len(colors)]
-            mean_c1, mean_c2 = means[:, 1], means[:, 3]
+            color   = colors[idx % len(colors)]
+            mean_c1 = means[:, 1]
+            mean_c2 = means[:, 3]
 
-            plt.figure(1)
-            plt.plot(mean_c1, mean_c2, color=color, lw=1.5, label=f"Trajectory {idx+1}")
-            plt.scatter(mean_c1, mean_c2, color=color, s=20, zorder=3)
+            label = (args.labels[idx] if args.labels and idx < len(args.labels)
+                     else f"Trajectory {idx+1}")
+            ax1.plot(mean_c1, mean_c2, color=color, lw=1.5, label=label)
+            ax1.scatter(mean_c1, mean_c2, color=color, s=20, zorder=3)
 
             if tree is not None:
                 F_path = []
@@ -216,38 +334,45 @@ def main():
                     dist, i_near = tree.query([x_val, y_val])
                     F_path.append(F_valid[i_near] if dist <= 0.15 else np.nan)
 
-                F_path = np.array(F_path)
+                F_path    = np.array(F_path)
                 valid_idx = np.isfinite(F_path)
                 if np.any(valid_idx):
-                    plt.figure(2)
-                    plt.plot(mean_c1[valid_idx], F_path[valid_idx], '-o',
-                             color=color, label=f"Trajectory {idx+1}")
+                    get_ax2().plot(mean_c1[valid_idx], F_path[valid_idx], '-o',
+                                   color=color, label=label)
 
-            print(f"📈 Añadida trayectoria {idx+1} desde {means_file}")
+            print(f"Added trajectory {idx+1} from {means_file}")
 
-    if plt.fignum_exists(1) and (args.mfep or args.meansfile):
-        plt.figure(1)
-        plt.legend(fontsize=13)
+    # --- Legend for 2D map ---
+    if args.legend and (args.mfep or args.meansfile):
+        ax1.legend(fontsize=fs_c)
 
-    if plt.fignum_exists(2):
-        plt.figure(2)
-        plt.xlabel("Reaction coordinate x$_1$ (Å)")
-        plt.ylabel("Free energy (kcal/mol)")
-        plt.title("1D free energy profile")
-        plt.grid(True, alpha=0.3)
-        plt.legend()
-        plt.tight_layout()
+    # --- Finish 1D profile figure ---
+    if ax2 is not None:
+        ax2.set_xlabel(args.xlabel, fontsize=fs_l)
+        ax2.set_ylabel("Free energy (kcal/mol)", fontsize=fs_l)
+        if args.title_1d:
+            ax2.set_title(args.title_1d, fontsize=fs_t, pad=10)
+        ax2.tick_params(axis='both', which='both',
+                        top=True, right=True,
+                        labeltop=False, labelright=False,
+                        width=1.5, length=5, labelsize=fs_c)
+        for spine in ax2.spines.values():
+            spine.set_linewidth(1.5)
+        ax2.grid(True, alpha=0.3)
+        if args.legend:
+            ax2.legend(fontsize=fs_c)
+        fig2.tight_layout(pad=1.5)
+
+    fig1.tight_layout(pad=1.5)
 
     if args.save:
-        plt.figure(1)
-        plt.savefig(args.save, dpi=300)
-        print(f"✅ Gráfico guardado en: {args.save}")
-        if plt.fignum_exists(2):
+        fig1.savefig(args.save, dpi=args.dpi, bbox_inches='tight')
+        print(f"Saved: {args.save}")
+        if fig2 is not None:
             base, ext = os.path.splitext(args.save)
             save2 = f"{base}_1d{ext}"
-            plt.figure(2)
-            plt.savefig(save2, dpi=300)
-            print(f"✅ Gráfico 1D guardado en: {save2}")
+            fig2.savefig(save2, dpi=args.dpi, bbox_inches='tight')
+            print(f"Saved: {save2}")
     else:
         plt.show()
 
